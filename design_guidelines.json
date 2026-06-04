@@ -1,0 +1,100 @@
+{
+  "project_name": "Facciamo Ape?",
+  "theme": "dark",
+  "archetype": "Archetype 5 (Luxury) mixed with Archetype 1 (Organic & Earthy). Atmosphere of a dim Milano wine bar.",
+  "vibe": "Warm, amber, burnt orange, espresso/charcoal background, soft glows, terracotta. Authentic, Italian, informal.",
+  "typography": {
+    "heading_font": "Cabinet Grotesk",
+    "body_font": "Outfit",
+    "scale": {
+      "h1": "text-5xl sm:text-6xl tracking-tighter leading-none font-black",
+      "h2": "text-3xl sm:text-4xl tracking-tight leading-none font-bold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-bold",
+      "body": "text-base leading-relaxed font-normal",
+      "small": "text-sm uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "background": "#0D0B0A",
+    "surface": "#1A1513",
+    "surface_glass": "rgba(26, 21, 19, 0.7)",
+    "primary": "#E85D04",
+    "primary_hover": "#DC2F02",
+    "secondary": "#F4A261",
+    "text_primary": "#FDF0D5",
+    "text_secondary": "#B0A89F",
+    "border": "#3A302A",
+    "error": "#D00000",
+    "success": "#38B000",
+    "glow": "rgba(232, 93, 4, 0.15)"
+  },
+  "layout_spacing": {
+    "container": "max-w-7xl mx-auto px-6 sm:px-12",
+    "section_padding": "py-24 sm:py-32",
+    "card_padding": "p-6 sm:p-8",
+    "gap": "gap-8 sm:gap-12"
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#E85D04] hover:bg-[#DC2F02] text-[#FDF0D5] font-bold rounded-full px-8 py-4 transition-all duration-300 shadow-[0_0_20px_rgba(232,93,4,0.3)] hover:shadow-[0_0_30px_rgba(220,47,2,0.5)] hover:-translate-y-1",
+      "secondary": "bg-transparent border border-[#3A302A] hover:border-[#F4A261] text-[#FDF0D5] font-bold rounded-full px-8 py-4 transition-all duration-300 hover:text-[#F4A261]"
+    },
+    "cards": {
+      "base": "bg-[#1A1513] border border-[#3A302A] rounded-3xl overflow-hidden hover:border-[#E85D04]/50 transition-colors duration-300",
+      "glass": "bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl"
+    },
+    "inputs": {
+      "base": "bg-[#0D0B0A] border border-[#3A302A] text-[#FDF0D5] rounded-xl px-4 py-3 focus:outline-none focus:border-[#E85D04] focus:ring-1 focus:ring-[#E85D04] transition-all placeholder:text-[#B0A89F]"
+    }
+  },
+  "motion": {
+    "transition_default": "transition-all duration-300 ease-in-out",
+    "hover_lift": "hover:-translate-y-1 hover:shadow-lg",
+    "fade_in_up": "animate-in fade-in slide-in-from-bottom-8 duration-700"
+  },
+  "media": {
+    "hero_background": {
+      "url": "https://images.pexels.com/photos/20094378/pexels-photo-20094378.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=1080&w=1920",
+      "alt": "Aperol Spritz dark bar"
+    },
+    "social_vibes": [
+      {
+        "url": "https://images.pexels.com/photos/6531477/pexels-photo-6531477.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=800&w=1200",
+        "alt": "People laughing at bar"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1541532713592-79a0317b6b77?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwxfHxwZW9wbGUlMjBsYXVnaGluZyUyMGRyaW5rcyUyMGJhciUyMG5pZ2h0fGVufDB8fHx8MTc4MDYwNDQzNnww&ixlib=rb-4.1.0&q=85",
+        "alt": "Group drinking"
+      }
+    ],
+    "profile_pictures": [
+      {
+        "url": "https://images.pexels.com/photos/6952734/pexels-photo-6952734.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "alt": "Woman drinking wine"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1614114531011-26afb982f0ef?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHw0fHxwZXJzb24lMjBkcmlua2luZyUyMHdpbmUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODA2MDQ0MzZ8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Woman holding wine glass"
+      }
+    ]
+  },
+  "pages": {
+    "landing": {
+      "hero": "Dark overlay on hero background image (bg-black/50 to bg-black/70 gradient). Huge bold headline 'Trova la compagnia giusta per un aperitivo'. Single line subtitle explaining the concept. Signup form for Email and City. Prominent 'Facciamo Ape?' logo.",
+      "how_it_works": "3 steps laid out in an asymmetrical grid. Steps: 1. Esplora i profili vicini, 2. Scrivi direttamente, 3. Decidete dove andare. Use large numeric typography."
+    },
+    "app_core": {
+      "explore": "Bento-style or vertical scrolling cards (Mobile first!). Card contains: Photo, Name, Age, Distance & Zone, Time slot preference (e.g., 18-19), 'Il tuo ordine al bar' (icon/text), Short bio, Number of aperitivos done. NO swiping UI, just scroll and click to message.",
+      "chat": "1-to-1 chat interface. UI reflects gating rule: First message shown freely. Input disabled/locked state until the other person accepts. Group chat features when users are added."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Ensure ALL interactive elements have data-testid attributes (e.g. data-testid='signup-submit-btn').",
+    "Use pure HTML/Tailwind for the landing page layouts to achieve asymmetrical/bento designs. Use Shadcn UI primitives internally for complex logic like Forms and Modals.",
+    "No dating app terminology or UI patterns like 'swipe right/left'. Keep it about casual drinks (Aperitivo).",
+    "Use 'Cabinet Grotesk' for all headings and 'Outfit' for body text. Load from Google Fonts or equivalent CDN.",
+    "Implement a Mobile-first design for the app sections, ensuring it looks like a native mobile app on small screens.",
+    "Do NOT use pure #000000 or #FFFFFF. Use the provided espresso background (#0D0B0A) and off-white text (#FDF0D5).",
+    "Inject 'Aperol glow' via subtle box-shadows or radial gradients behind key elements (e.g. bg-[radial-gradient(circle_at_center,rgba(232,93,4,0.15),transparent_50%)])."
+  ]
+}
