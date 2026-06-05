@@ -805,7 +805,7 @@ async def admin_list_reports(status: str = "open", admin: dict = Depends(get_adm
             **r,
             "reporter": users_map.get(r["reporter_id"])
         })
-    result = list(grouped.values())
+    result = [g for g in grouped.values() if g["reported_user"]]
     result.sort(key=lambda x: -x["report_count"])
     return result
 
