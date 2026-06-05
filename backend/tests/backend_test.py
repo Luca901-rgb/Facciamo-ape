@@ -223,6 +223,104 @@ def test_upload_and_download(userA):
     assert len(r2.content) > 0
 
 
+# === New features: ws-token, referral, websocket ===
+def test_ws_token_requires_auth():
+    r = requests.get(f"{API}/auth/ws-token")
+    assert r.status_code == 401
+
+
+def test_ws_token_returns_token(userA):
+    r = requests.get(f"{API}/auth/ws-token", headers=userA["h"])
+    assert r.status_code == 200
+    assert r.json().get("ws_token") == userA["tok"]
+
+
+def test_my_referral_endpoint(userA):
+    r = requests.get(f"{API}/users/me/referral", headers=userA["h"])
+    assert r.status_code == 200
+    d = r.json()
+    assert d["username"] == userA["uname"]
+    assert f"/?ref={userA['uname']}" in d["link"]
+    assert "invited_count" in d and "completed_count" in d
+
+
+def test_referral_completion_flow():
+    # Create referrer R and referred user X (X.referred_by = R)
+    rid, rtok, runame = _seed_user("R")
+    xid = f"test-user-x-{uuid.uuid4().hex[:8]}"
+    xtok = f"test_session_{xid}"
+    mdb.users.insert_one({
+        "user_id": xid, "email": f"{xid}@x.com", "name": "Referred X",
+        "username": f"x_{xid[-6:]}", "age": 25, "city": "Milano", "zone": "Navigli",
+        "time_slot": "20-21", "drink": "Spritz", "bio": "x",
+        "lat": 45.45, "lng": 9.17, "aperitivi_count": 0, "blocked_users": [],
+        "referred_by": rid, "referral_completed_with": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mdb.user_sessions.insert_one({
+        "user_id": xid, "session_token": xtok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    hR = {"Authorization": f"Bearer {rtok}"}
+    hX = {"Authorization": f"Bearer {xtok}"}
+    # R messages X first
+    r1 = requests.post(f"{API}/conversations", json={"target_user_id": xid, "text": "ciao amico"}, headers=hR)
+    assert r1.status_code == 200
+    cid = r1.json()["conversation_id"]
+    # X replies (auto-accept) -> triggers maybe_complete_referral
+    r2 = requests.post(f"{API}/conversations/{cid}/messages", json={"text": "ehi!"}, headers=hX)
+    assert r2.status_code == 200
+    # Verify both have each other in referral_completed_with
+    R = mdb.users.find_one({"user_id": rid})
+    X = mdb.users.find_one({"user_id": xid})
+    assert xid in R.get("referral_completed_with", []), f"R missing X: {R.get('referral_completed_with')}"
+    assert rid in X.get("referral_completed_with", []), f"X missing R: {X.get('referral_completed_with')}"
+    assert R["aperitivi_count"] >= 1 and X["aperitivi_count"] >= 1
+
+    # Idempotency: invoking accept again should not duplicate (already accepted, but force re-run helper)
+    r3 = requests.post(f"{API}/conversations/{cid}/messages", json={"text": "ancora"}, headers=hR)
+    assert r3.status_code == 200
+    R2 = mdb.users.find_one({"user_id": rid})
+    assert R2["referral_completed_with"].count(xid) == 1
+
+
+def test_auth_session_referrer_invalid_no_crash():
+    # Posting with invalid session_id should 401; we just verify endpoint shape
+    r = requests.post(f"{API}/auth/session", json={"session_id": "bogus", "referrer_username": "giulia_b"})
+    assert r.status_code in (400, 401)
+
+
+def test_websocket_broadcast(userA):
+    """Two users open WS; A POSTs message; both should receive via WS."""
+    try:
+        from websockets.sync.client import connect
+    except Exception:
+        pytest.skip("websockets lib not installed")
+    # Seed userZ
+    zid, ztok, zuname = _seed_user("Z")
+    ws_base = BASE.replace("https://", "wss://").replace("http://", "ws://")
+    import json as _json
+    received_a, received_z = [], []
+    with connect(f"{ws_base}/api/ws/{userA['tok']}", open_timeout=10) as wsA, \
+         connect(f"{ws_base}/api/ws/{ztok}", open_timeout=10) as wsZ:
+        # A initiates conversation to Z
+        r = requests.post(f"{API}/conversations",
+                          json={"target_user_id": zid, "text": "ws-hello"}, headers=userA["h"])
+        assert r.status_code == 200
+        cid = r.json()["conversation_id"]
+        # Read frames with short timeout
+        for ws, bucket in ((wsA, received_a), (wsZ, received_z)):
+            try:
+                ws.socket.settimeout(5)
+                frame = ws.recv(timeout=5)
+                bucket.append(_json.loads(frame))
+            except Exception as e:
+                print(f"recv error: {e}")
+    assert any(m.get("type") == "message" and m.get("conversation_id") == cid for m in received_a), received_a
+    assert any(m.get("type") == "message" and m.get("conversation_id") == cid for m in received_z), received_z
+
+
 # Cleanup
 def teardown_module(module):
     try:

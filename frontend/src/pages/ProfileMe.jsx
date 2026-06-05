@@ -1,9 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { api, fileUrl } from "@/lib/api";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/App";
 import { toast } from "sonner";
-import { Camera, Wine, Beer, Martini, GlassWater, MapPin } from "lucide-react";
+import { Camera, Wine, Beer, Martini, GlassWater, MapPin, Sparkles, Copy } from "lucide-react";
 
 const DRINKS = [
   { id: "Birra", icon: <Beer className="w-5 h-5" /> },
@@ -27,7 +27,12 @@ export default function ProfileMe() {
   const [photoPath, setPhotoPath] = useState(user?.photo_path);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [referral, setReferral] = useState(null);
   const fileRef = useRef();
+
+  useEffect(() => {
+    api.get("/users/me/referral").then(({ data }) => setReferral(data)).catch(() => {});
+  }, []);
 
   if (!user) return null;
 
@@ -146,6 +151,32 @@ export default function ProfileMe() {
           <button onClick={detectLocation} data-testid="me-geo-btn" className="w-full flex items-center justify-center gap-2 border border-ape-border hover:border-ape-secondary rounded-xl px-4 py-3 font-bold text-sm">
             <MapPin className="w-4 h-4" /> Aggiorna posizione
           </button>
+
+          {referral && (
+            <div className="bg-ape-surface border border-ape-border rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-ape-secondary" />
+                <h3 className="font-display font-bold text-lg">Porta un amico</h3>
+              </div>
+              <p className="text-sm text-ape-textMuted mb-4">
+                Condividi il link. Quando il tuo amico farà il suo primo aperitivo qui dentro, vi appare il badge <span className="text-ape-secondary font-bold">"Prima volta insieme"</span> sui profili.
+              </p>
+              <div className="flex gap-2 items-center bg-ape-bg border border-ape-border rounded-xl px-3 py-2.5">
+                <span data-testid="referral-link" className="flex-1 text-sm font-mono truncate text-ape-text">{referral.link}</span>
+                <button
+                  data-testid="referral-copy-btn"
+                  onClick={() => { navigator.clipboard.writeText(referral.link); toast.success("Copiato 🍊"); }}
+                  className="text-ape-secondary hover:text-ape-primary p-2"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-6 text-sm">
+                <div><span className="font-display font-black text-ape-primary text-xl">{referral.invited_count}</span> <span className="text-ape-textMuted">invitati</span></div>
+                <div><span className="font-display font-black text-ape-secondary text-xl">{referral.completed_count}</span> <span className="text-ape-textMuted">"prima volta"</span></div>
+              </div>
+            </div>
+          )}
 
           <button onClick={save} disabled={saving} data-testid="me-save-btn" className="w-full bg-ape-primary hover:bg-ape-primaryHover disabled:opacity-50 text-ape-text font-bold rounded-full px-8 py-4 transition-all shadow-[0_0_25px_rgba(232,93,4,0.4)]">
             {saving ? "..." : "Salva"}

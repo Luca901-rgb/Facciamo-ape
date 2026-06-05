@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import Nav from "@/components/Nav";
+import { useAuth } from "@/App";
 import { toast } from "sonner";
-import { ArrowLeft, Clock, MapPin, Wine, Beer, Martini, GlassWater, Ban, Send } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Wine, Beer, Martini, GlassWater, Ban, Send, Sparkles } from "lucide-react";
 
 const drinkIcon = (d) => {
   const map = { Birra: Beer, Vino: Wine, "Vino rosso": Wine, "Vino bianco": Wine, Cocktail: Martini, Spritz: Martini, Analcolico: GlassWater };
@@ -14,6 +15,7 @@ const drinkIcon = (d) => {
 export default function Profile() {
   const { userId } = useParams();
   const navigate = useNavigate();
+  const { user: me } = useAuth();
   const [user, setUser] = useState(null);
   const [showMsg, setShowMsg] = useState(false);
   const [msg, setMsg] = useState("");
@@ -45,6 +47,8 @@ export default function Profile() {
   };
 
   if (!user) return <div className="min-h-screen bg-ape-bg" />;
+
+  const firstTimeBadge = me && (user.referral_completed_with || []).includes(me.user_id);
 
   return (
     <div className="min-h-screen bg-ape-bg text-ape-text pb-24 md:pb-12">
@@ -97,6 +101,14 @@ export default function Profile() {
               </div>
               <div className="text-xs text-ape-textMuted font-mono">@{user.username}</div>
             </div>
+
+            {firstTimeBadge && (
+              <div data-testid="first-time-badge" className="mt-2 flex items-center gap-2 bg-ape-primary/10 border border-ape-primary/30 rounded-2xl px-4 py-3">
+                <Sparkles className="w-4 h-4 text-ape-secondary" />
+                <span className="text-sm font-bold text-ape-secondary">Prima volta insieme</span>
+                <span className="text-xs text-ape-textMuted ml-auto">vi siete trovati grazie a un invito</span>
+              </div>
+            )}
           </div>
         </div>
 

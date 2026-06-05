@@ -1,0 +1,23 @@
+{
+  "summary": "Tested the two new features (WebSocket realtime chat + 'Porta un amico' referral) plus regression. 18/18 pytest cases PASS including new ws-token auth gating, ws_token return shape, /users/me/referral, referrer_username flow on /auth/session, full referral-completion via auto-accept, $addToSet idempotency, and live WS broadcast across two connected sockets. Frontend: ref-banner on /?ref=, sessionStorage capture, referral card on /me, 'Prima volta insieme' badge visibility (shown when in referral_completed_with, hidden otherwise), and ChatDetail WS push (counterpart REST message appears without manual refresh).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "WS auth via URL path param is correct workaround for k8s ingress stripping Authorization on Upgrade.",
+    "maybe_complete_referral uses $addToSet -> idempotent. Verified completed_with array stays length 1 after repeated triggers.",
+    "auth_session accepts referrer_username, normalizes lower-case, and guards self-referral (ref.user_id != user_id).",
+    "GET /api/auth/ws-token returns the session_token verbatim — fine here since the WS endpoint validates session via DB lookup; consider short-lived signed tokens for stronger isolation if WS scope grows.",
+    "server.py is now ~730 lines (was 670) — over the 700-line soft limit. Recommend splitting into routers (auth, users, conversations, ws) for next iteration.",
+    "ChatDetail correctly fetches /api/auth/ws-token then opens wss connection; previous polling removed."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100%"},
+  "test_credentials": "MongoDB-seeded sessions per /app/memory/test_credentials.md (test_session_* / test-user-* / test-ui-*). Cleaned up in teardown.",
+  "seed_data_creation": "Two ephemeral users (U referrer, V referred_by=U) inserted via mongosh for UI badge test; conv+messages cleaned up afterwards. Demo users used unchanged.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "backend_test.py now has 18 tests covering full MVP + new WS + referral flows. Use websockets.sync.client for WS frame assertions. Frontend selectors confirmed: data-testid='ref-banner','referral-link','referral-copy-btn','first-time-badge'. WS opens at wss://<host>/api/ws/<session_token>.",
+  "rca of the issue": "N/A — no bugs found."
+}

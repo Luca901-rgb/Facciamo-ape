@@ -17,7 +17,9 @@ export default function AuthCallback() {
     }
     (async () => {
       try {
-        const { data } = await api.post("/auth/session", { session_id: sessionId });
+        const referrer_username = sessionStorage.getItem("ref") || undefined;
+        const { data } = await api.post("/auth/session", { session_id: sessionId, referrer_username });
+        sessionStorage.removeItem("ref");
         setUser(data);
         // clean hash
         window.history.replaceState(null, "", window.location.pathname);

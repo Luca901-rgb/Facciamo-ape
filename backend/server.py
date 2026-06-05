@@ -87,6 +87,8 @@ class User(BaseModel):
     aperitivi_count: int = 0
     created_at: str
     blocked_users: List[str] = []
+    referred_by: Optional[str] = None
+    referral_completed_with: List[str] = []
 
 
 class ProfileUpdate(BaseModel):
@@ -150,6 +152,7 @@ async def get_current_user(request: Request) -> dict:
 async def auth_session(request: Request, response: Response):
     body = await request.json()
     session_id = body.get("session_id")
+    referrer_username = body.get("referrer_username")
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id required")
 
@@ -179,6 +182,11 @@ async def auth_session(request: Request, response: Response):
         while await db.users.find_one({"username": username}):
             username = f"{base_username}{suffix}"
             suffix += 1
+        referred_by = None
+        if referrer_username:
+            ref = await db.users.find_one({"username": referrer_username.strip().lower()}, {"_id": 0})
+            if ref and ref["user_id"] != user_id:
+                referred_by = ref["user_id"]
         new_user = {
             "user_id": user_id,
             "email": email,
@@ -196,6 +204,8 @@ async def auth_session(request: Request, response: Response):
             "lng": None,
             "aperitivi_count": 0,
             "blocked_users": [],
+            "referred_by": referred_by,
+            "referral_completed_with": [],
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         await db.users.insert_one(new_user)
@@ -230,6 +240,30 @@ async def auth_logout(request: Request, response: Response):
         await db.user_sessions.delete_one({"session_token": token})
     response.delete_cookie("session_token", path="/")
     return {"ok": True}
+
+
+@api_router.get("/auth/ws-token")
+async def auth_ws_token(request: Request, user: dict = Depends(get_current_user)):
+    """Return the current session token so the frontend can open a WebSocket.
+    The cookie is httpOnly so JS can't read it; this endpoint is auth-gated."""
+    token = request.cookies.get("session_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth.split(" ", 1)[1]
+    return {"ws_token": token}
+
+
+@api_router.get("/users/me/referral")
+async def my_referral(request: Request, user: dict = Depends(get_current_user)):
+    origin = request.headers.get("origin") or ""
+    invited = await db.users.count_documents({"referred_by": user["user_id"]})
+    return {
+        "username": user.get("username"),
+        "link": f"{origin}/?ref={user.get('username')}" if origin else f"/?ref={user.get('username')}",
+        "invited_count": invited,
+        "completed_count": len(user.get("referral_completed_with", [])),
+    }
 
 
 # ===== Waitlist =====
@@ -316,6 +350,28 @@ def haversine(lat1, lon1, lat2, lon2):
     dl = math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * R * math.asin(math.sqrt(a))
+
+
+async def maybe_complete_referral(user_a_id: str, user_b_id: str):
+    """If A referred B (or vice versa) and they haven't already completed, mark badge on both."""
+    a = await db.users.find_one({"user_id": user_a_id}, {"_id": 0})
+    b = await db.users.find_one({"user_id": user_b_id}, {"_id": 0})
+    if not a or not b:
+        return
+    pair = None
+    if a.get("referred_by") == b["user_id"]:
+        pair = (b["user_id"], a["user_id"])  # (referrer, referred)
+    elif b.get("referred_by") == a["user_id"]:
+        pair = (a["user_id"], b["user_id"])
+    if not pair:
+        return
+    referrer_id, referred_id = pair
+    referrer = a if a["user_id"] == referrer_id else b
+    referred = b if referrer is a else a
+    if referred["user_id"] in referrer.get("referral_completed_with", []):
+        return  # already completed
+    await db.users.update_one({"user_id": referrer_id}, {"$addToSet": {"referral_completed_with": referred_id}})
+    await db.users.update_one({"user_id": referred_id}, {"$addToSet": {"referral_completed_with": referrer_id}})
 
 
 # ===== Upload =====
@@ -493,6 +549,9 @@ async def send_message(conv_id: str, payload: MessageCreate, user: dict = Depend
         # Bump aperitivi count for both
         for p in conv["participants"]:
             await db.users.update_one({"user_id": p}, {"$inc": {"aperitivi_count": 1}})
+        # Check referral completion
+        if len(conv["participants"]) == 2:
+            await maybe_complete_referral(conv["participants"][0], conv["participants"][1])
     await db.conversations.update_one({"id": conv_id}, {"$set": updates})
 
     await ws_manager.broadcast_to_conv(conv_id, {
@@ -514,6 +573,8 @@ async def accept_conversation(conv_id: str, user: dict = Depends(get_current_use
     await db.conversations.update_one({"id": conv_id}, {"$set": {"accepted": True}})
     for p in conv["participants"]:
         await db.users.update_one({"user_id": p}, {"$inc": {"aperitivi_count": 1}})
+    if len(conv["participants"]) == 2:
+        await maybe_complete_referral(conv["participants"][0], conv["participants"][1])
     await ws_manager.broadcast_to_conv(conv_id, {"type": "accepted", "conversation_id": conv_id})
     return {"ok": True}
 

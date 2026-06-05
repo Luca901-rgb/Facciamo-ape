@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/App";
 import { toast } from "sonner";
@@ -10,6 +10,19 @@ export default function Landing() {
   const [city, setCity] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [refUser, setRefUser] = useState(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) {
+      sessionStorage.setItem("ref", ref);
+      setRefUser(ref);
+    } else {
+      const stored = sessionStorage.getItem("ref");
+      if (stored) setRefUser(stored);
+    }
+  }, []);
 
   const handleGoogle = () => {
     // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
@@ -82,6 +95,12 @@ export default function Landing() {
           </p>
 
           <div className="mt-12 max-w-xl animate-fade-up" style={{animationDelay: '0.3s'}}>
+            {refUser && !submitted && (
+              <div data-testid="ref-banner" className="mb-4 inline-flex items-center gap-2 bg-ape-primary/15 border border-ape-primary/40 rounded-full px-4 py-2 text-sm">
+                <Sparkles className="w-3.5 h-3.5 text-ape-secondary" />
+                <span><span className="font-bold text-ape-secondary">@{refUser}</span> ti ha invitato. Entrate, fate un'ape insieme, e vi appare il badge "Prima volta insieme".</span>
+              </div>
+            )}
             {submitted ? (
               <div className="bg-ape-surface border border-ape-secondary/40 rounded-2xl p-6">
                 <div className="font-display font-bold text-xl mb-1">Ci sei. 🍊</div>

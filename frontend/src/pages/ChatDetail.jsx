@@ -31,14 +31,31 @@ export default function ChatDetail() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages?.length]);
 
-  // WebSocket
+  // WebSocket realtime
   useEffect(() => {
     if (!user) return;
-    // Get session token from cookie isn't possible directly (httponly). We'll use polling fallback as well.
-    // But we can derive: ask backend for current token? For simplicity, use a known endpoint: the cookie is sent with httponly. We need a token in JS.
-    // Instead, expose token via /auth/me? Cookie is httponly. Use polling fallback.
-    const id = setInterval(load, 4000);
-    return () => clearInterval(id);
+    let ws;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/auth/ws-token");
+        if (!data?.ws_token || !alive) return;
+        ws = new WebSocket(wsUrl(data.ws_token));
+        wsRef.current = ws;
+        ws.onmessage = (ev) => {
+          try {
+            const payload = JSON.parse(ev.data);
+            if (payload.conversation_id === convId) {
+              load();
+            }
+          } catch {}
+        };
+      } catch {}
+    })();
+    return () => {
+      alive = false;
+      try { ws && ws.close(); } catch {}
+    };
   }, [user, convId]);
 
   const send = async () => {
