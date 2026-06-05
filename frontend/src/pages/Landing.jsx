@@ -159,7 +159,7 @@ export default function Landing() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-12">
             {[
               { n: "01", t: "Esplora i profili vicini", d: "Apri l'app, guardi chi c'è in giro stasera, in che zona, a che ora vuole uscire, cosa beve.", icon: <MapPin className="w-7 h-7" /> },
-              { n: "02", t: "Scrivi direttamente", d: "Trovi qualcuno interessante? Mandagli un messaggio. Il primo è gratis. Se accetta, parlate.", icon: <GlassWater className="w-7 h-7" /> },
+              { n: "02", t: "Scrivi direttamente", d: "Trovi qualcuno interessante? Mandagli un messaggio. Per scrivere di nuovo, aspetti che ti accetti — niente spam, niente pressing.", icon: <GlassWater className="w-7 h-7" /> },
               { n: "03", t: "Decidete dove andare", d: "Vi mettete d'accordo sul bar, ci aggiungete amici se serve, e via. Niente swipe, niente attese.", icon: <Wine className="w-7 h-7" /> },
             ].map((step, i) => (
               <div key={step.n} className={`relative ${i === 1 ? 'md:mt-16' : i === 2 ? 'md:mt-32' : ''}`}>
@@ -201,7 +201,7 @@ export default function Landing() {
           </h2>
           <div className="space-y-4 text-lg text-ape-textMuted leading-relaxed">
             <p>Abbiamo fatto FacciamoApe? perché eravamo stanchi di passare la serata davanti al telefono. Volevamo qualcosa di semplice: trovare gente vera, vicina, che ha voglia di uscire stasera.</p>
-            <p>Il primo messaggio è libero. Se ti rispondono, parlate. Se non vi va, amen — bloccate e via. Niente match, niente cuoricini, niente pressing.</p>
+            <p>Il primo messaggio lo mandi sempre tu. Per scriverne un altro, devi aspettare che l'altra persona ti accetti — così niente raffiche, niente spam, niente pressing. Se non vi va, blocchi e via.</p>
             <p>Aggiungi amici in chat se vuoi farne una piccola comitiva. Decidete il bar voi. Noi vi togliamo di mezzo.</p>
           </div>
           <div className="mt-12">

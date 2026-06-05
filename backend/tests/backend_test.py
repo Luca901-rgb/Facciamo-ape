@@ -321,6 +321,108 @@ def test_websocket_broadcast(userA):
     assert any(m.get("type") == "message" and m.get("conversation_id") == cid for m in received_z), received_z
 
 
+# === Moderation: report + auto-suspension ===
+def test_report_requires_auth():
+    r = requests.post(f"{API}/users/report/anyone", json={"reason": "spam"})
+    assert r.status_code == 401
+
+
+def test_report_self_blocked(userA):
+    r = requests.post(f"{API}/users/report/{userA['uid']}", json={"reason": "spam"}, headers=userA["h"])
+    assert r.status_code == 400
+    assert "te stesso" in r.text
+
+
+def test_report_invalid_reason(userA, userB):
+    r = requests.post(f"{API}/users/report/{userB['uid']}", json={"reason": "wrong_value"}, headers=userA["h"])
+    assert r.status_code == 400
+    assert "Motivo non valido" in r.text
+
+
+def test_report_idempotent_no_suspend(userA):
+    # Fresh target
+    tid, _, _ = _seed_user("RT1")
+    # Same reporter twice with same reason -> already_reported, no double row, no suspend
+    r1 = requests.post(f"{API}/users/report/{tid}", json={"reason": "spam"}, headers=userA["h"])
+    assert r1.status_code == 200 and r1.json().get("ok") is True
+    r2 = requests.post(f"{API}/users/report/{tid}", json={"reason": "spam"}, headers=userA["h"])
+    assert r2.status_code == 200 and r2.json().get("already_reported") is True
+    target = mdb.users.find_one({"user_id": tid})
+    assert not target.get("is_suspended")
+    # And reporter side blocked the target
+    A = mdb.users.find_one({"user_id": userA["uid"]})
+    assert tid in A.get("blocked_users", [])
+    # Cleanup reports for this target
+    mdb.reports.delete_many({"reported_id": tid})
+
+
+def test_auto_suspend_at_3_unique_reporters():
+    tid, _, _ = _seed_user("TGT")
+    reporters = []
+    for s in ["R1", "R2", "R3"]:
+        uid, tok, _ = _seed_user(s)
+        reporters.append((uid, tok))
+    # First 2 -> not suspended
+    for i, (uid, tok) in enumerate(reporters):
+        r = requests.post(f"{API}/users/report/{tid}", json={"reason": "molestie"},
+                          headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code == 200
+        t = mdb.users.find_one({"user_id": tid})
+        if i < 2:
+            assert not t.get("is_suspended"), f"suspended early after {i+1}"
+        else:
+            assert t.get("is_suspended") is True
+            assert t.get("suspended_at")
+
+    # Suspended user excluded from nearby
+    other_uid, other_tok, _ = _seed_user("OBS")
+    r2 = requests.get(f"{API}/users/nearby", headers={"Authorization": f"Bearer {other_tok}"})
+    assert r2.status_code == 200
+    assert tid not in [u["user_id"] for u in r2.json()]
+
+    # Cannot message a suspended target
+    r3 = requests.post(f"{API}/conversations",
+                       json={"target_user_id": tid, "text": "hi"},
+                       headers={"Authorization": f"Bearer {other_tok}"})
+    assert r3.status_code == 403
+    assert "non è più disponibile" in r3.text or "non e' piu' disponibile" in r3.text.lower()
+
+    # Suspended user cannot create conversations
+    # Make a session for the suspended user
+    sus_tok = f"test_session_sus_{uuid.uuid4().hex[:8]}"
+    mdb.user_sessions.insert_one({
+        "user_id": tid, "session_token": sus_tok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    marco = mdb.users.find_one({"username": "marco_r"})
+    r4 = requests.post(f"{API}/conversations",
+                       json={"target_user_id": marco["user_id"], "text": "hi"},
+                       headers={"Authorization": f"Bearer {sus_tok}"})
+    assert r4.status_code == 403
+    assert "sospeso" in r4.text.lower()
+
+    # Suspended user cannot send messages in existing conv
+    # Create conv from clean user -> we'll piggyback: use existing conv participants only if exist
+    # Make a conv where suspended user is a participant: pre-insert
+    conv_id = str(uuid.uuid4())
+    mdb.conversations.insert_one({
+        "id": conv_id, "participants": [tid, marco["user_id"]],
+        "is_group": False, "initiated_by": [marco["user_id"]],
+        "accepted": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    r5 = requests.post(f"{API}/conversations/{conv_id}/messages",
+                       json={"text": "test"},
+                       headers={"Authorization": f"Bearer {sus_tok}"})
+    assert r5.status_code == 403
+    assert "Account sospeso" in r5.text
+
+    mdb.reports.delete_many({"reported_id": tid})
+    mdb.conversations.delete_one({"id": conv_id})
+
+
 # Cleanup
 def teardown_module(module):
     try:

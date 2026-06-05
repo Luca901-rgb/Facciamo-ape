@@ -151,7 +151,7 @@ export default function ChatDetail() {
 
       {showAcceptBanner && (
         <div className="px-5 py-4 bg-ape-primary/10 border-t border-ape-primary/30 flex items-center justify-between gap-3 max-w-2xl mx-auto w-full">
-          <p className="text-sm">Ti ha scritto. Rispondi o accetta per sbloccare la chat.</p>
+          <p className="text-sm">Ti ha scritto. Accetta per sbloccare la chat (oppure rispondi e si sblocca da sola).</p>
           <button onClick={accept} data-testid="chat-accept-btn" className="bg-ape-primary text-ape-text font-bold rounded-full px-4 py-2 text-sm flex items-center gap-2"><Check className="w-4 h-4" /> Accetta</button>
         </div>
       )}
@@ -174,7 +174,7 @@ export default function ChatDetail() {
         ) : (
           <div className="flex items-center gap-3 text-sm text-ape-textMuted px-3 py-3 bg-ape-surface border border-ape-border rounded-2xl">
             <Lock className="w-4 h-4 text-ape-secondary" />
-            <span>{conv.block_reason === "blocked" ? "Non puoi più scrivere qui." : "Aspetta che ti risponda prima di scrivere di nuovo."}</span>
+            <span>{conv.block_reason === "blocked" ? "Non puoi più scrivere qui." : "In attesa che ti accetti. Quando lo fa, sblocchi la chat e potrai scrivere quanto vuoi."}</span>
           </div>
         )}
       </footer>

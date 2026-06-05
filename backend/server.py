@@ -297,7 +297,7 @@ async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_curren
 @api_router.get("/users/nearby")
 async def get_nearby(user: dict = Depends(get_current_user), limit: int = 50):
     cursor = db.users.find(
-        {"user_id": {"$ne": user["user_id"]}, "age": {"$ne": None}},
+        {"user_id": {"$ne": user["user_id"]}, "age": {"$ne": None}, "is_suspended": {"$ne": True}},
         {"_id": 0}
     ).limit(limit)
     results = []
@@ -313,6 +313,48 @@ async def get_nearby(user: dict = Depends(get_current_user), limit: int = 50):
         results.append(u)
     results.sort(key=lambda x: (x["distance_km"] is None, x["distance_km"] or 999))
     return results
+
+
+REPORT_REASONS = {"spam", "contenuto_inappropriato", "molestie", "profilo_falso", "altro"}
+AUTO_SUSPEND_THRESHOLD = 3
+
+
+class ReportPayload(BaseModel):
+    reason: str
+    detail: Optional[str] = None
+
+
+@api_router.post("/users/report/{user_id}")
+async def report_user(user_id: str, payload: ReportPayload, user: dict = Depends(get_current_user)):
+    if user_id == user["user_id"]:
+        raise HTTPException(status_code=400, detail="Non puoi segnalare te stesso")
+    if payload.reason not in REPORT_REASONS:
+        raise HTTPException(status_code=400, detail="Motivo non valido")
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    # Idempotent per (reporter, reported, reason)
+    existing = await db.reports.find_one({
+        "reporter_id": user["user_id"], "reported_id": user_id, "reason": payload.reason
+    })
+    if existing:
+        return {"ok": True, "already_reported": True}
+    await db.reports.insert_one({
+        "id": str(uuid.uuid4()),
+        "reporter_id": user["user_id"],
+        "reported_id": user_id,
+        "reason": payload.reason,
+        "detail": payload.detail,
+        "status": "open",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    # Count unique reporters
+    unique_reporters = await db.reports.distinct("reporter_id", {"reported_id": user_id, "status": "open"})
+    if len(unique_reporters) >= AUTO_SUSPEND_THRESHOLD and not target.get("is_suspended"):
+        await db.users.update_one({"user_id": user_id}, {"$set": {"is_suspended": True, "suspended_at": datetime.now(timezone.utc).isoformat()}})
+    # Also auto-block on reporter side so they don't see them again
+    await db.users.update_one({"user_id": user["user_id"]}, {"$addToSet": {"blocked_users": user_id}})
+    return {"ok": True, "report_count": len(unique_reporters)}
 
 
 @api_router.get("/users/{user_id}")
@@ -429,9 +471,13 @@ async def list_conversations(user: dict = Depends(get_current_user)):
 
 @api_router.post("/conversations")
 async def create_conversation(payload: ConversationCreate, user: dict = Depends(get_current_user)):
+    if user.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Il tuo account è sospeso per segnalazioni multiple")
     target = await db.users.find_one({"user_id": payload.target_user_id}, {"_id": 0})
     if not target:
         raise HTTPException(status_code=404, detail="Utente non trovato")
+    if target.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Questo utente non è più disponibile")
     if user["user_id"] in target.get("blocked_users", []):
         raise HTTPException(status_code=403, detail="Non puoi scrivere a questo utente")
 
@@ -522,6 +568,8 @@ async def get_conversation(conv_id: str, user: dict = Depends(get_current_user))
 
 @api_router.post("/conversations/{conv_id}/messages")
 async def send_message(conv_id: str, payload: MessageCreate, user: dict = Depends(get_current_user)):
+    if user.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Account sospeso")
     conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
     if not conv or user["user_id"] not in conv["participants"]:
         raise HTTPException(status_code=404, detail="Conversazione non trovata")

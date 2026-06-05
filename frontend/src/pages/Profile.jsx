@@ -4,7 +4,7 @@ import { api, fileUrl } from "@/lib/api";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/App";
 import { toast } from "sonner";
-import { ArrowLeft, Clock, MapPin, Wine, Beer, Martini, GlassWater, Ban, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Wine, Beer, Martini, GlassWater, Ban, Send, Sparkles, Flag } from "lucide-react";
 
 const drinkIcon = (d) => {
   const map = { Birra: Beer, Vino: Wine, "Vino rosso": Wine, "Vino bianco": Wine, Cocktail: Martini, Spritz: Martini, Analcolico: GlassWater };
@@ -20,6 +20,9 @@ export default function Profile() {
   const [showMsg, setShowMsg] = useState(false);
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState("spam");
+  const [reportDetail, setReportDetail] = useState("");
 
   useEffect(() => {
     api.get(`/users/${userId}`).then(({ data }) => setUser(data)).catch(() => navigate("/explore"));
@@ -30,7 +33,7 @@ export default function Profile() {
     setSending(true);
     try {
       const { data } = await api.post("/conversations", { target_user_id: userId, text: msg });
-      toast.success("Messaggio inviato. Ora aspetta che ti risponda 🤞");
+      toast.success("Messaggio inviato. Aspetta che ti accetti per continuare 🤞");
       navigate(`/chat/${data.conversation_id}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || "Errore");
@@ -44,6 +47,17 @@ export default function Profile() {
     await api.post(`/users/block/${userId}`);
     toast.success("Utente bloccato");
     navigate("/explore");
+  };
+
+  const sendReport = async () => {
+    try {
+      await api.post(`/users/report/${userId}`, { reason: reportReason, detail: reportDetail });
+      toast.success("Grazie. La segnalazione è arrivata. Hai bloccato l'utente.");
+      setShowReport(false);
+      navigate("/explore");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Errore");
+    }
   };
 
   if (!user) return <div className="min-h-screen bg-ape-bg" />;
@@ -117,13 +131,16 @@ export default function Profile() {
             <button data-testid="open-message-btn" onClick={() => setShowMsg(true)} className="flex-1 bg-ape-primary hover:bg-ape-primaryHover text-ape-text font-bold rounded-full px-6 py-4 transition-all shadow-[0_0_25px_rgba(232,93,4,0.4)]">
               Scrivi a {user.name?.split(" ")[0]} →
             </button>
+            <button data-testid="report-btn" onClick={() => setShowReport(true)} className="border border-ape-border hover:border-yellow-500 hover:text-yellow-400 text-ape-textMuted rounded-full p-4 transition-colors" title="Segnala">
+              <Flag className="w-5 h-5" />
+            </button>
             <button data-testid="block-btn" onClick={block} className="border border-ape-border hover:border-red-500 hover:text-red-400 text-ape-textMuted rounded-full p-4 transition-colors" title="Blocca">
               <Ban className="w-5 h-5" />
             </button>
           </div>
         ) : (
           <div className="mt-6 bg-ape-surface border border-ape-border rounded-3xl p-5">
-            <p className="text-xs text-ape-textMuted mb-3 uppercase tracking-[0.2em] font-bold">Il primo messaggio è libero. Falla bella.</p>
+            <p className="text-xs text-ape-textMuted mb-3 uppercase tracking-[0.2em] font-bold">Mandi il primo messaggio. Per scrivere di nuovo serve la sua accettazione.</p>
             <textarea
               data-testid="first-message-input"
               value={msg}
@@ -137,6 +154,31 @@ export default function Profile() {
               <button data-testid="send-first-btn" onClick={sendFirst} disabled={sending || !msg.trim()} className="ml-auto bg-ape-primary hover:bg-ape-primaryHover disabled:opacity-50 text-ape-text font-bold rounded-full px-6 py-3 flex items-center gap-2">
                 <Send className="w-4 h-4" /> Invia
               </button>
+            </div>
+          </div>
+        )}
+
+        {showReport && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-5" onClick={() => setShowReport(false)}>
+            <div className="bg-ape-surface border border-ape-border rounded-3xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+              <h3 className="font-display font-bold text-xl mb-2">Segnala {user.name?.split(" ")[0]}</h3>
+              <p className="text-sm text-ape-textMuted mb-4">
+                Ci aiuti a tenere FacciamoApe? una community sana. Verrà automaticamente bloccato per te.
+              </p>
+              <label className="text-xs uppercase tracking-[0.2em] font-bold text-ape-textMuted mb-2 block">Motivo</label>
+              <select data-testid="report-reason-select" value={reportReason} onChange={(e) => setReportReason(e.target.value)} className="w-full bg-ape-bg border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none text-ape-text mb-4">
+                <option value="spam">Spam o messaggi ripetitivi</option>
+                <option value="contenuto_inappropriato">Contenuto inappropriato</option>
+                <option value="molestie">Molestie</option>
+                <option value="profilo_falso">Profilo falso</option>
+                <option value="altro">Altro</option>
+              </select>
+              <label className="text-xs uppercase tracking-[0.2em] font-bold text-ape-textMuted mb-2 block">Dettagli (opzionale)</label>
+              <textarea data-testid="report-detail-input" value={reportDetail} onChange={(e) => setReportDetail(e.target.value)} rows={3} maxLength={300} className="w-full bg-ape-bg border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none resize-none mb-4" />
+              <div className="flex gap-2">
+                <button onClick={() => setShowReport(false)} className="flex-1 border border-ape-border rounded-full py-3 font-bold">Annulla</button>
+                <button data-testid="report-submit-btn" onClick={sendReport} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-full py-3">Segnala</button>
+              </div>
             </div>
           </div>
         )}
