@@ -12,6 +12,7 @@ import Profile from "@/pages/Profile";
 import ProfileMe from "@/pages/ProfileMe";
 import Chat from "@/pages/Chat";
 import ChatDetail from "@/pages/ChatDetail";
+import Admin from "@/pages/Admin";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -77,6 +78,7 @@ function AppRouter() {
       <Route path="/profile/:userId" element={<Protected><Profile /></Protected>} />
       <Route path="/chat" element={<Protected><Chat /></Protected>} />
       <Route path="/chat/:convId" element={<Protected><ChatDetail /></Protected>} />
+      <Route path="/admin" element={<Protected><Admin /></Protected>} />
     </Routes>
   );
 }

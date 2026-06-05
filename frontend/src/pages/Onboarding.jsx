@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/App";
@@ -23,6 +23,11 @@ export default function Onboarding() {
   const [drink, setDrink] = useState(user?.drink || "");
   const [bio, setBio] = useState(user?.bio || "");
   const [loading, setLoading] = useState(false);
+  const [cities, setCities] = useState([]);
+
+  useEffect(() => {
+    api.get("/cities").then(({ data }) => setCities(data));
+  }, []);
   const [coords, setCoords] = useState(user?.lat ? { lat: user.lat, lng: user.lng } : null);
 
   const detectLocation = () => {
@@ -77,7 +82,12 @@ export default function Onboarding() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs uppercase tracking-[0.2em] font-bold text-ape-textMuted mb-2 block">Città</label>
-              <input data-testid="onb-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Milano" className="w-full bg-ape-surface border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none" />
+              <select data-testid="onb-city" value={city} onChange={(e) => setCity(e.target.value)} className="w-full bg-ape-surface border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none text-ape-text">
+                <option value="">Scegli…</option>
+                {cities.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] font-bold text-ape-textMuted mb-2 block">Zona</label>

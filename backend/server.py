@@ -27,7 +27,34 @@ db = client[os.environ['DB_NAME']]
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = os.environ.get("APP_NAME", "facciamoape")
+ADMIN_EMAILS = set(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
 storage_key: Optional[str] = None
+
+# Supported university cities (lat, lng of city center)
+SUPPORTED_CITIES = [
+    {"name": "Milano", "lat": 45.4642, "lng": 9.1900},
+    {"name": "Roma", "lat": 41.9028, "lng": 12.4964},
+    {"name": "Napoli", "lat": 40.8518, "lng": 14.2681},
+    {"name": "Bologna", "lat": 44.4949, "lng": 11.3426},
+    {"name": "Firenze", "lat": 43.7696, "lng": 11.2558},
+    {"name": "Torino", "lat": 45.0703, "lng": 7.6869},
+    {"name": "Padova", "lat": 45.4064, "lng": 11.8768},
+    {"name": "Pisa", "lat": 43.7228, "lng": 10.4017},
+    {"name": "Pavia", "lat": 45.1847, "lng": 9.1582},
+    {"name": "Perugia", "lat": 43.1107, "lng": 12.3908},
+    {"name": "Trento", "lat": 46.0667, "lng": 11.1167},
+    {"name": "Catania", "lat": 37.5079, "lng": 15.0830},
+    {"name": "Bari", "lat": 41.1171, "lng": 16.8719},
+    {"name": "Genova", "lat": 44.4056, "lng": 8.9463},
+    {"name": "Verona", "lat": 45.4384, "lng": 10.9916},
+    {"name": "Parma", "lat": 44.8015, "lng": 10.3279},
+    {"name": "Modena", "lat": 44.6471, "lng": 10.9252},
+    {"name": "Siena", "lat": 43.3188, "lng": 11.3308},
+    {"name": "Salerno", "lat": 40.6824, "lng": 14.7681},
+    {"name": "Cagliari", "lat": 39.2238, "lng": 9.1217},
+    {"name": "Palermo", "lat": 38.1157, "lng": 13.3613},
+]
+CITY_BY_NAME = {c["name"].lower(): c for c in SUPPORTED_CITIES}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -165,13 +192,14 @@ async def auth_session(request: Request, response: Response):
     data = r.json()
 
     email = data["email"]
+    is_admin = email.lower() in ADMIN_EMAILS
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
-        # Update picture/name if changed
+        # Update picture/name/admin flag if changed
         await db.users.update_one(
             {"user_id": user_id},
-            {"$set": {"name": data["name"], "picture": data.get("picture")}}
+            {"$set": {"name": data["name"], "picture": data.get("picture"), "is_admin": is_admin}}
         )
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
@@ -206,6 +234,8 @@ async def auth_session(request: Request, response: Response):
             "blocked_users": [],
             "referred_by": referred_by,
             "referral_completed_with": [],
+            "is_admin": is_admin,
+            "is_suspended": False,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         await db.users.insert_one(new_user)
@@ -294,23 +324,47 @@ async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_curren
     return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
 
 
+@api_router.get("/cities")
+async def list_cities():
+    return SUPPORTED_CITIES
+
+
 @api_router.get("/users/nearby")
-async def get_nearby(user: dict = Depends(get_current_user), limit: int = 50):
-    cursor = db.users.find(
-        {"user_id": {"$ne": user["user_id"]}, "age": {"$ne": None}, "is_suspended": {"$ne": True}},
-        {"_id": 0}
-    ).limit(limit)
+async def get_nearby(
+    user: dict = Depends(get_current_user),
+    limit: int = 100,
+    city: Optional[str] = None,
+    radius_km: float = 5.0,
+):
+    query = {"user_id": {"$ne": user["user_id"]}, "age": {"$ne": None}, "is_suspended": {"$ne": True}}
+    if city:
+        query["city"] = {"$regex": f"^{city}$", "$options": "i"}
+
+    # Determine the reference point for distance: user GPS, else city center if specified, else None
+    ref_lat = user.get("lat")
+    ref_lng = user.get("lng")
+    if (ref_lat is None or ref_lng is None) and city:
+        cc = CITY_BY_NAME.get(city.lower())
+        if cc:
+            ref_lat, ref_lng = cc["lat"], cc["lng"]
+
+    cursor = db.users.find(query, {"_id": 0}).limit(limit * 3)
     results = []
     async for u in cursor:
         if user["user_id"] in u.get("blocked_users", []):
             continue
         if u["user_id"] in user.get("blocked_users", []):
             continue
-        if user.get("lat") and user.get("lng") and u.get("lat") and u.get("lng"):
-            u["distance_km"] = round(haversine(user["lat"], user["lng"], u["lat"], u["lng"]), 1)
+        if ref_lat is not None and ref_lng is not None and u.get("lat") and u.get("lng"):
+            d = round(haversine(ref_lat, ref_lng, u["lat"], u["lng"]), 2)
+            if d > radius_km:
+                continue
+            u["distance_km"] = d
         else:
             u["distance_km"] = None
         results.append(u)
+        if len(results) >= limit:
+            break
     results.sort(key=lambda x: (x["distance_km"] is None, x["distance_km"] or 999))
     return results
 
@@ -713,6 +767,91 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
         ws_manager.disconnect(user_id, websocket)
 
 
+# ===== Admin =====
+async def get_admin(user: dict = Depends(get_current_user)) -> dict:
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Solo admin")
+    return user
+
+
+@api_router.get("/admin/reports")
+async def admin_list_reports(status: str = "open", admin: dict = Depends(get_admin)):
+    cursor = db.reports.find({"status": status}, {"_id": 0}).sort("created_at", -1).limit(500)
+    reports = await cursor.to_list(500)
+    # Enrich with reporter + reported user info
+    ids = set()
+    for r in reports:
+        ids.add(r["reporter_id"])
+        ids.add(r["reported_id"])
+    users_map = {}
+    if ids:
+        async for u in db.users.find(
+            {"user_id": {"$in": list(ids)}},
+            {"_id": 0, "user_id": 1, "name": 1, "username": 1, "email": 1, "is_suspended": 1, "picture": 1, "photo_path": 1}
+        ):
+            users_map[u["user_id"]] = u
+    # Group by reported_id with counts
+    grouped = {}
+    for r in reports:
+        rid = r["reported_id"]
+        if rid not in grouped:
+            grouped[rid] = {
+                "reported_user": users_map.get(rid),
+                "report_count": 0,
+                "reports": []
+            }
+        grouped[rid]["report_count"] += 1
+        grouped[rid]["reports"].append({
+            **r,
+            "reporter": users_map.get(r["reporter_id"])
+        })
+    result = list(grouped.values())
+    result.sort(key=lambda x: -x["report_count"])
+    return result
+
+
+@api_router.post("/admin/users/{user_id}/unsuspend")
+async def admin_unsuspend(user_id: str, admin: dict = Depends(get_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"is_suspended": False, "suspended_at": None}}
+    )
+    # Resolve their open reports so they don't auto-suspend again immediately
+    await db.reports.update_many(
+        {"reported_id": user_id, "status": "open"},
+        {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc).isoformat(), "resolved_by": admin["user_id"]}}
+    )
+    return {"ok": True}
+
+
+@api_router.post("/admin/users/{user_id}/suspend")
+async def admin_suspend(user_id: str, admin: dict = Depends(get_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    if target.get("is_admin"):
+        raise HTTPException(status_code=400, detail="Non puoi sospendere un admin")
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$set": {"is_suspended": True, "suspended_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"ok": True}
+
+
+@api_router.post("/admin/reports/{report_id}/resolve")
+async def admin_resolve_report(report_id: str, admin: dict = Depends(get_admin)):
+    res = await db.reports.update_one(
+        {"id": report_id},
+        {"$set": {"status": "resolved", "resolved_at": datetime.now(timezone.utc).isoformat(), "resolved_by": admin["user_id"]}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Report non trovato")
+    return {"ok": True}
+
+
 # ===== Demo seed =====
 DEMO_USERS = [
     {"name": "Giulia Bianchi", "username": "giulia_b", "age": 27, "city": "Milano", "zone": "Navigli", "time_slot": "20-21", "drink": "Spritz", "bio": "Cerco compagnia per spritz a sorpresa nei Navigli.", "lat": 45.4500, "lng": 9.1700, "picture": "https://images.pexels.com/photos/6952734/pexels-photo-6952734.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "aperitivi_count": 12},
@@ -772,6 +911,18 @@ async def startup():
             logger.info(f"Removed {deleted.deleted_count} demo users")
     except Exception as e:
         logger.error(f"Demo cleanup failed: {e}")
+    # Performance indexes
+    try:
+        await db.reports.create_index([("reported_id", 1), ("reporter_id", 1), ("reason", 1)])
+        await db.reports.create_index([("status", 1), ("created_at", -1)])
+        await db.messages.create_index([("conversation_id", 1), ("created_at", -1)])
+        await db.conversations.create_index([("participants", 1), ("updated_at", -1)])
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index("username", unique=True, sparse=True)
+        await db.user_sessions.create_index("session_token", unique=True)
+        logger.info("Indexes ensured")
+    except Exception as e:
+        logger.error(f"Index creation failed: {e}")
 
 
 @api_router.get("/")

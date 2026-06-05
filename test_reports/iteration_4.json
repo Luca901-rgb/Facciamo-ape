@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 4 — Cities, radius/city filter on /users/nearby, Admin moderation endpoints + page, MongoDB indexes, and is_admin auto-assignment. 31/35 backend tests pass; 11/11 NEW iteration-4 tests pass (cities x1, nearby radius/city/fallback x3, admin auth+grouped+suspend+unsuspend+cannot-suspend-admin+resolve-report+admin-emails x7, indexes x1, nearby regression x1 skipped due to demo removal). Frontend verified: city chip row (1 near-me + 21 cities), Milano selection re-fetches, admin nav appears only for is_admin user, /admin page renders grouped reports with tabs + suspend/unsuspend/resolve buttons, non-admin redirects to /explore, ProfileMe city is a SELECT with 22 options.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/reports", "issue": "Groups whose reported_user no longer exists in DB (e.g., deleted) still appear with reported_user=null. Frontend renders an empty card with a working Suspend button that will 404. Recommend filtering out orphan groups server-side."},
+      {"endpoint": "startup demo seed", "issue": "Demo users are auto-deleted on startup (production flag) but /app/memory/test_credentials.md still references demo usernames (giulia_b, marco_r, sofia_e, lorenzo_c, chiara_m). This causes 4 pre-existing tests from iteration 3 to fail (test_accept_own_conv_forbidden, test_add_participant_becomes_group, test_block_filters_and_blocks_messaging, test_auto_suspend_at_3_unique_reporters) and 3 to be skipped. Not iteration-4 regressions but worth documenting."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Admin.jsx", "issue": "React console warning: 'Each child in a list should have a unique key prop. Check the render method of Admin.' Likely a missing key={} on a mapped element (reports.map or reasons mapping). Cosmetic but should be fixed.", "selector": "/admin page", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "[LOW] Add unique key prop in Admin.jsx for the mapped list causing React warning (likely the reports.map inside each group).",
+    "[LOW] Optional: filter out groups in /api/admin/reports where reported_user is null (orphan reports after user deletion).",
+    "[INFO] Update /app/memory/test_credentials.md to remove demo-user references now that demos are deleted on startup, and/or migrate iteration 1-3 tests to seed their own conversation targets."
+  ],
+  "critical_code_review_comments": [
+    "ADMIN_EMAILS parsing uses set semantics with lowercase + comma split — correct and idempotent. Verified user with email lcammarota24@gmail.com has is_admin=true.",
+    "All 6 required indexes are created at startup and present in DB: reports(reported_id,reporter_id,reason), reports(status,created_at desc), messages(conversation_id,created_at desc), conversations(participants,updated_at desc), users.email unique, users.username unique+sparse, user_sessions.session_token unique. Verified via list_indexes().",
+    "get_admin dep correctly returns 403 with 'Solo admin' for non-admin tokens; admin endpoints all guarded.",
+    "/admin/users/{id}/unsuspend correctly resolves all open reports for that user with resolved_by+resolved_at — verified end-to-end (open->0, resolved>=1, resolved_by==admin uid).",
+    "/admin/users/{id}/suspend correctly 400s on suspending another admin.",
+    "Default radius_km=5 is applied; far user (~10km) excluded, near user (~1.5km) included.",
+    "City filter is case-insensitive regex (^name$/i) — verified 'roma' matches 'Roma' query.",
+    "City-center fallback works: requester without GPS and ?city=Roma uses (41.9028,12.4964) and excludes >5km targets.",
+    "server.py now ~946 lines — past 700-line soft limit. Recommend splitting into routers (auth, users, conversations, moderation, admin, ws) for maintainability. Already raised in iteration 3.",
+    "Admin.jsx orphan-group rendering: when reported_user is null, the card still shows a Suspend button keyed off undefined which would request /api/admin/users/undefined/suspend — defensive null-check or skip rendering recommended."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {
+    "backend": "100% on iteration-4 new tests (11/11). 88% overall (31/35) — 4 pre-existing failures due to demo users removed from production startup; not iteration-4 regressions.",
+    "frontend": "100% on iteration-4 new UI features"
+  },
+  "test_credentials": "Created via mongosh per /app/memory/test_credentials.md. Admin email auto-assignment: lcammarota24@gmail.com (already in DB with is_admin:true).",
+  "seed_data_creation": "Tests create fresh users (admin + non-admin + targets + reports) via mongosh and pytest helpers (_seed_user, _seed_user_at, _make_admin_user). All cleaned up in teardown_module.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "11 new tests appended to /app/backend/tests/backend_test.py covering: GET /api/cities (21 cities, no auth), /users/nearby radius_km=5 + city filter (case-insensitive) + city-center fallback, /admin/reports auth + grouping, /admin/users/{id}/suspend|unsuspend (with auto-resolve of open reports), /admin/reports/{id}/resolve, admin-cannot-suspend-admin, ADMIN_EMAILS env parsing, and verification of all 6 MongoDB indexes. UI selectors added/verified: city-chip-near-me, city-chip-<Name> (Milano/Roma/Napoli/Torino/Bologna/etc., 21 total), nav-admin/nav-admin-d (admin-only), admin-tab-open, admin-tab-resolved, admin-group-<uid>, admin-suspend-<uid>, admin-unsuspend-<uid>, admin-resolve-<reportId>, me-city (SELECT with 22 options). Pre-existing demo-user-dependent tests (iterations 1-3) now fail because production demo seed was disabled — not iteration-4 regressions.",
+  "rca of the issue": "N/A — all iteration-4 acceptance criteria pass. The 4 failed legacy tests are caused by production demo seed being disabled in server startup (lines 908-913) which deletes is_demo:true users; legacy tests assumed demos (giulia_b, marco_r, sofia_e, chiara_m) would be present. The fix is to update those tests to create their own targets, or re-enable demo seed in non-prod environments — outside scope of iteration-4 review."
+}

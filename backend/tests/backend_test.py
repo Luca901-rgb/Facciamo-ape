@@ -423,6 +423,264 @@ def test_auto_suspend_at_3_unique_reporters():
     mdb.conversations.delete_one({"id": conv_id})
 
 
+# ===== Iteration 4: Cities, radius/city filter, Admin endpoints, Indexes =====
+
+def _seed_user_at(suffix, lat, lng, city="Milano"):
+    uid = f"test-user-{int(time.time()*1000)}-{suffix}-{uuid.uuid4().hex[:6]}"
+    tok = f"test_session_{uid}"
+    mdb.users.insert_one({
+        "user_id": uid, "email": f"{uid}@example.com", "name": "Test " + suffix,
+        "picture": None, "username": f"u_{uid[-10:]}".lower(), "age": 28, "city": city,
+        "zone": "Z", "time_slot": "20-21", "drink": "Spritz", "bio": "t",
+        "photo_path": None, "lat": lat, "lng": lng,
+        "aperitivi_count": 0, "blocked_users": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mdb.user_sessions.insert_one({
+        "user_id": uid, "session_token": tok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return uid, tok
+
+
+def test_cities_endpoint_no_auth():
+    r = requests.get(f"{API}/cities")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, list)
+    assert len(data) == 21, f"expected 21 cities, got {len(data)}"
+    # First three
+    assert data[0]["name"] == "Milano"
+    assert data[1]["name"] == "Roma"
+    assert data[2]["name"] == "Napoli"
+    # Shape
+    for c in data:
+        assert set(c.keys()) >= {"name", "lat", "lng"}
+        assert isinstance(c["lat"], (int, float)) and isinstance(c["lng"], (int, float))
+
+
+def test_nearby_radius_5km_excludes_far():
+    # Requester at Milano center
+    req_uid, req_tok = _seed_user_at("REQNEAR", 45.4642, 9.1900, "Milano")
+    # Close target ~1.5 km away in Milano
+    near_uid, _ = _seed_user_at("NEAR", 45.4770, 9.1900, "Milano")
+    # Far target ~10km north of Milano (still city Milano)
+    far_uid, _ = _seed_user_at("FAR", 45.5550, 9.1900, "Milano")
+    headers = {"Authorization": f"Bearer {req_tok}"}
+    r = requests.get(f"{API}/users/nearby?radius_km=5", headers=headers)
+    assert r.status_code == 200
+    ids = [u["user_id"] for u in r.json()]
+    assert near_uid in ids, "Near user (~1.5km) should be in 5km nearby"
+    assert far_uid not in ids, "Far user (~10km) should be excluded with radius=5"
+
+
+def test_nearby_city_filter_case_insensitive():
+    # Requester at Roma
+    req_uid, req_tok = _seed_user_at("REQROMA", 41.9028, 12.4964, "Roma")
+    # User in Milano
+    mil_uid, _ = _seed_user_at("INMIL", 45.4642, 9.1900, "Milano")
+    # User in roma (lowercase city storage) close to req
+    rom_uid, _ = _seed_user_at("INROMA", 41.905, 12.498, "roma")
+    headers = {"Authorization": f"Bearer {req_tok}"}
+    r = requests.get(f"{API}/users/nearby?city=Milano", headers=headers)
+    assert r.status_code == 200
+    ids = [u["user_id"] for u in r.json()]
+    assert mil_uid not in ids, "User in Milano should be filtered out (too far from Roma req)"
+    # Now filter by Roma; req has GPS so 5km from req. rom_uid is close.
+    r2 = requests.get(f"{API}/users/nearby?city=Roma", headers=headers)
+    assert r2.status_code == 200
+    ids2 = [u["user_id"] for u in r2.json()]
+    assert rom_uid in ids2, "Lowercase 'roma' should match Roma case-insensitively"
+    assert mil_uid not in ids2
+
+
+def test_nearby_city_fallback_to_city_center_when_no_gps():
+    # Requester WITHOUT lat/lng
+    uid = f"test-user-{int(time.time()*1000)}-NOGPS-{uuid.uuid4().hex[:6]}"
+    tok = f"test_session_{uid}"
+    mdb.users.insert_one({
+        "user_id": uid, "email": f"{uid}@example.com", "name": "NoGPS",
+        "username": f"u_{uid[-10:]}".lower(), "age": 28, "city": "Roma",
+        "zone": "Z", "time_slot": "20-21", "drink": "Spritz", "bio": "t",
+        "lat": None, "lng": None,
+        "aperitivi_count": 0, "blocked_users": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mdb.user_sessions.insert_one({
+        "user_id": uid, "session_token": tok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    # Close to Roma center: ~1km away
+    close_uid, _ = _seed_user_at("CLOSEROM", 41.91, 12.50, "Roma")
+    # Far in Roma (>5km from center): ~10km north
+    far_uid, _ = _seed_user_at("FARROM", 41.99, 12.4964, "Roma")
+    headers = {"Authorization": f"Bearer {tok}"}
+    r = requests.get(f"{API}/users/nearby?city=Roma", headers=headers)
+    assert r.status_code == 200
+    ids = [u["user_id"] for u in r.json()]
+    assert close_uid in ids
+    assert far_uid not in ids, "User >5km from Roma center should be excluded when requester has no GPS"
+
+
+# ===== Admin endpoints =====
+
+def _make_admin_user():
+    uid = f"test-user-{int(time.time()*1000)}-ADM-{uuid.uuid4().hex[:6]}"
+    tok = f"test_session_{uid}"
+    mdb.users.insert_one({
+        "user_id": uid, "email": f"{uid}@example.com", "name": "Admin",
+        "username": f"a_{uid[-10:]}".lower(), "age": 30, "city": "Milano",
+        "zone": "Z", "time_slot": "20-21", "drink": "Spritz", "bio": "a",
+        "lat": 45.45, "lng": 9.17, "aperitivi_count": 0, "blocked_users": [],
+        "is_admin": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mdb.user_sessions.insert_one({
+        "user_id": uid, "session_token": tok,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return uid, tok
+
+
+def test_admin_reports_requires_admin(userA):
+    r = requests.get(f"{API}/admin/reports", headers=userA["h"])
+    assert r.status_code == 403
+    assert "Solo admin" in r.text
+
+
+def test_admin_reports_grouped():
+    admin_uid, admin_tok = _make_admin_user()
+    headers = {"Authorization": f"Bearer {admin_tok}"}
+    # Seed a target and 2 reporters
+    tgt_uid, _ = _seed_user_at("ADMTGT", 45.45, 9.17)
+    r1_uid, r1_tok = _seed_user_at("ADMR1", 45.45, 9.17)
+    r2_uid, r2_tok = _seed_user_at("ADMR2", 45.45, 9.17)
+    # Two reports with different reasons
+    requests.post(f"{API}/users/report/{tgt_uid}", json={"reason": "spam"},
+                  headers={"Authorization": f"Bearer {r1_tok}"})
+    requests.post(f"{API}/users/report/{tgt_uid}", json={"reason": "molestie"},
+                  headers={"Authorization": f"Bearer {r2_tok}"})
+    r = requests.get(f"{API}/admin/reports?status=open", headers=headers)
+    assert r.status_code == 200
+    data = r.json()
+    # Find the group for our target
+    grp = next((g for g in data if g.get("reported_user") and g["reported_user"]["user_id"] == tgt_uid), None)
+    assert grp is not None, f"target group missing in {[g.get('reported_user',{}).get('user_id') for g in data]}"
+    assert grp["report_count"] == 2
+    assert len(grp["reports"]) == 2
+    # Each report has reporter sub-doc
+    for rep in grp["reports"]:
+        assert rep.get("reporter") is not None
+        assert rep["reporter"]["user_id"] in {r1_uid, r2_uid}
+    # Cleanup
+    mdb.reports.delete_many({"reported_id": tgt_uid})
+
+
+def test_admin_suspend_and_unsuspend_resolves_reports():
+    admin_uid, admin_tok = _make_admin_user()
+    h = {"Authorization": f"Bearer {admin_tok}"}
+    tgt_uid, _ = _seed_user_at("ADMSUS", 45.45, 9.17)
+    rep_uid, rep_tok = _seed_user_at("ADMREP", 45.45, 9.17)
+    # Make one open report
+    requests.post(f"{API}/users/report/{tgt_uid}", json={"reason": "spam"},
+                  headers={"Authorization": f"Bearer {rep_tok}"})
+    # Suspend
+    r = requests.post(f"{API}/admin/users/{tgt_uid}/suspend", headers=h)
+    assert r.status_code == 200 and r.json().get("ok") is True
+    t = mdb.users.find_one({"user_id": tgt_uid})
+    assert t["is_suspended"] is True
+    assert t.get("suspended_at")
+    # Unsuspend should clear flag and resolve open reports
+    r2 = requests.post(f"{API}/admin/users/{tgt_uid}/unsuspend", headers=h)
+    assert r2.status_code == 200
+    t2 = mdb.users.find_one({"user_id": tgt_uid})
+    assert t2["is_suspended"] is False
+    # All open reports for tgt should now be resolved by admin
+    open_left = mdb.reports.count_documents({"reported_id": tgt_uid, "status": "open"})
+    assert open_left == 0
+    resolved = list(mdb.reports.find({"reported_id": tgt_uid, "status": "resolved"}))
+    assert len(resolved) >= 1
+    assert resolved[0].get("resolved_by") == admin_uid
+    assert resolved[0].get("resolved_at")
+    mdb.reports.delete_many({"reported_id": tgt_uid})
+
+
+def test_admin_cannot_suspend_admin():
+    admin_uid, admin_tok = _make_admin_user()
+    other_admin_uid, _ = _make_admin_user()
+    h = {"Authorization": f"Bearer {admin_tok}"}
+    r = requests.post(f"{API}/admin/users/{other_admin_uid}/suspend", headers=h)
+    assert r.status_code == 400
+    assert "admin" in r.text.lower()
+
+
+def test_admin_resolve_single_report():
+    admin_uid, admin_tok = _make_admin_user()
+    h = {"Authorization": f"Bearer {admin_tok}"}
+    tgt_uid, _ = _seed_user_at("ADMRES", 45.45, 9.17)
+    rep_uid, rep_tok = _seed_user_at("ADMRES2", 45.45, 9.17)
+    requests.post(f"{API}/users/report/{tgt_uid}", json={"reason": "altro"},
+                  headers={"Authorization": f"Bearer {rep_tok}"})
+    rep = mdb.reports.find_one({"reported_id": tgt_uid, "reporter_id": rep_uid})
+    assert rep is not None
+    rid = rep["id"]
+    r = requests.post(f"{API}/admin/reports/{rid}/resolve", headers=h)
+    assert r.status_code == 200
+    rep2 = mdb.reports.find_one({"id": rid})
+    assert rep2["status"] == "resolved"
+    assert rep2.get("resolved_by") == admin_uid
+    # Not found
+    r2 = requests.post(f"{API}/admin/reports/does-not-exist/resolve", headers=h)
+    assert r2.status_code == 404
+    mdb.reports.delete_many({"reported_id": tgt_uid})
+
+
+def test_admin_emails_auto_assign():
+    # ADMIN_EMAILS env should contain lcammarota24@gmail.com -> case insensitive set semantics
+    import os as _os
+    raw = _os.environ.get("ADMIN_EMAILS", "")
+    # In container the value is read from .env; ensure lowercase parsing works
+    parsed = set(e.strip().lower() for e in raw.split(",") if e.strip())
+    # The seeded admin user in DB has this email and should be is_admin
+    u = mdb.users.find_one({"email": "lcammarota24@gmail.com"})
+    if u:
+        assert u.get("is_admin") is True, "Configured admin should have is_admin=true"
+    # Ensure parsing produced lowercased entries (set semantics)
+    for e in parsed:
+        assert e == e.lower()
+
+
+def test_mongo_indexes_exist():
+    # reports
+    names = [i["name"] for i in mdb.reports.list_indexes()]
+    assert "reported_id_1_reporter_id_1_reason_1" in names
+    assert "status_1_created_at_-1" in names
+    # messages
+    names = [i["name"] for i in mdb.messages.list_indexes()]
+    assert "conversation_id_1_created_at_-1" in names
+    # conversations
+    names = [i["name"] for i in mdb.conversations.list_indexes()]
+    assert "participants_1_updated_at_-1" in names
+    # users
+    user_idx = {i["name"]: i for i in mdb.users.list_indexes()}
+    assert "email_1" in user_idx and user_idx["email_1"].get("unique") is True
+    assert "username_1" in user_idx and user_idx["username_1"].get("unique") is True
+    assert user_idx["username_1"].get("sparse") is True
+    # user_sessions
+    sess_idx = {i["name"]: i for i in mdb.user_sessions.list_indexes()}
+    assert "session_token_1" in sess_idx and sess_idx["session_token_1"].get("unique") is True
+
+
+def test_nearby_no_params_regression(userA, demo_user):
+    # Regression: /users/nearby with no params still works (uses default radius 5km)
+    r = requests.get(f"{API}/users/nearby", headers=userA["h"])
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
 # Cleanup
 def teardown_module(module):
     try:

@@ -28,10 +28,12 @@ export default function ProfileMe() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [referral, setReferral] = useState(null);
+  const [cities, setCities] = useState([]);
   const fileRef = useRef();
 
   useEffect(() => {
     api.get("/users/me/referral").then(({ data }) => setReferral(data)).catch(() => {});
+    api.get("/cities").then(({ data }) => setCities(data)).catch(() => {});
   }, []);
 
   if (!user) return null;
@@ -122,7 +124,12 @@ export default function ProfileMe() {
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Città">
-              <input data-testid="me-city" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="input" />
+              <select data-testid="me-city" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="input">
+                <option value="">Scegli…</option>
+                {cities.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
             </Field>
             <Field label="Zona">
               <input data-testid="me-zone" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} className="input" />

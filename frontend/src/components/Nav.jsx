@@ -1,11 +1,11 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Compass, MessageCircle, User, LogOut } from "lucide-react";
+import { Compass, MessageCircle, User, LogOut, Shield } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/App";
 
 export default function Nav() {
   const navigate = useNavigate();
-  const { setUser } = useAuth();
+  const { user, setUser } = useAuth();
   const handleLogout = async () => {
     try { await api.post("/auth/logout"); } catch {}
     setUser(null);
@@ -28,6 +28,11 @@ export default function Nav() {
         <NavLink to="/me" data-testid="nav-me" className={linkCls}>
           <User className="w-5 h-5" /> Tu
         </NavLink>
+        {user?.is_admin && (
+          <NavLink to="/admin" data-testid="nav-admin" className={linkCls}>
+            <Shield className="w-5 h-5" /> Mod
+          </NavLink>
+        )}
       </nav>
 
       {/* Desktop top nav */}
@@ -39,6 +44,7 @@ export default function Nav() {
           <NavLink to="/explore" data-testid="nav-explore-d" className={linkCls}><Compass className="w-5 h-5" /><span>Esplora</span></NavLink>
           <NavLink to="/chat" data-testid="nav-chat-d" className={linkCls}><MessageCircle className="w-5 h-5" /><span>Chat</span></NavLink>
           <NavLink to="/me" data-testid="nav-me-d" className={linkCls}><User className="w-5 h-5" /><span>Profilo</span></NavLink>
+          {user?.is_admin && <NavLink to="/admin" data-testid="nav-admin-d" className={linkCls}><Shield className="w-5 h-5" /><span>Mod</span></NavLink>}
           <button onClick={handleLogout} data-testid="nav-logout" className="text-ape-textMuted hover:text-ape-primary"><LogOut className="w-5 h-5" /></button>
         </div>
       </nav>

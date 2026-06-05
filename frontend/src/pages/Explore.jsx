@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
 import Nav from "@/components/Nav";
-import { Wine, Beer, Martini, GlassWater, Clock, MapPin } from "lucide-react";
+import { useAuth } from "@/App";
+import { Wine, Beer, Martini, GlassWater, Clock, MapPin, Navigation } from "lucide-react";
 
 const drinkIcon = (d) => {
   const map = { Birra: Beer, Vino: Wine, "Vino rosso": Wine, "Vino bianco": Wine, Cocktail: Martini, Spritz: Martini, Analcolico: GlassWater };
@@ -10,34 +11,76 @@ const drinkIcon = (d) => {
   return <Icon className="w-4 h-4" />;
 };
 
+const NEAR_ME = "__near_me__";
+
 export default function Explore() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [selected, setSelected] = useState(NEAR_ME);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/users/nearby").then(({ data }) => {
-      setUsers(data);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    api.get("/cities").then(({ data }) => {
+      setCities(data);
+      // Default selection: user's own city if supported, else "near me"
+      if (user?.city) {
+        const match = data.find((c) => c.name.toLowerCase() === user.city.toLowerCase());
+        if (match) setSelected(match.name);
+      }
+    });
+  }, [user]);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = selected === NEAR_ME ? { radius_km: 5 } : { city: selected, radius_km: 5 };
+    api.get("/users/nearby", { params })
+      .then(({ data }) => setUsers(data))
+      .catch(() => setUsers([]))
+      .finally(() => setLoading(false));
+  }, [selected]);
 
   return (
     <div className="min-h-screen bg-ape-bg text-ape-text pb-24 md:pb-12">
       <Nav />
       <main className="px-5 sm:px-12 pt-6 sm:pt-10 max-w-5xl mx-auto">
-        <div className="mb-8">
+        <div className="mb-6">
           <p className="text-xs uppercase tracking-[0.3em] text-ape-secondary font-bold mb-3">Stasera in giro</p>
           <h1 className="font-display font-black text-4xl sm:text-5xl tracking-tighter leading-none">
-            Chi c'è <span className="text-ape-primary italic">vicino</span> a te?
+            Chi c'è <span className="text-ape-primary italic">a 5km</span> da te?
           </h1>
+        </div>
+
+        {/* City selector */}
+        <div className="mb-8 -mx-5 sm:mx-0 overflow-x-auto hide-scroll">
+          <div className="flex gap-2 px-5 sm:px-0 pb-2">
+            <button
+              data-testid="city-chip-near-me"
+              onClick={() => setSelected(NEAR_ME)}
+              className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full border font-bold text-sm transition-colors ${selected === NEAR_ME ? "bg-ape-primary border-ape-primary text-ape-text" : "bg-ape-surface border-ape-border text-ape-textMuted hover:border-ape-secondary"}`}
+            >
+              <Navigation className="w-3.5 h-3.5" /> Vicino a me
+            </button>
+            {cities.map((c) => (
+              <button
+                key={c.name}
+                data-testid={`city-chip-${c.name}`}
+                onClick={() => setSelected(c.name)}
+                className={`shrink-0 px-4 py-2 rounded-full border font-bold text-sm transition-colors ${selected === c.name ? "bg-ape-primary border-ape-primary text-ape-text" : "bg-ape-surface border-ape-border text-ape-textMuted hover:border-ape-secondary"}`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (
           <div className="text-ape-textMuted">Cerco compagnia…</div>
         ) : users.length === 0 ? (
           <div className="bg-ape-surface border border-ape-border rounded-2xl p-8 text-center">
-            <p className="text-ape-textMuted">Nessuno qui intorno, per ora. Torna più tardi.</p>
+            <p className="text-ape-textMuted mb-2">Nessuno qui intorno entro 5km{selected !== NEAR_ME ? ` a ${selected}` : ""}.</p>
+            <p className="text-sm text-ape-textMuted/70">Prova un'altra città, o invita un amico.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
