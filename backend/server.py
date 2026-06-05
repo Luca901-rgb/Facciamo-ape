@@ -750,10 +750,13 @@ async def startup():
         logger.info("Storage initialized")
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
+    # Demo seed disabled for production
     try:
-        await seed_demo()
+        deleted = await db.users.delete_many({"is_demo": True})
+        if deleted.deleted_count:
+            logger.info(f"Removed {deleted.deleted_count} demo users")
     except Exception as e:
-        logger.error(f"Seed failed: {e}")
+        logger.error(f"Demo cleanup failed: {e}")
 
 
 @api_router.get("/")
