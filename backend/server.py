@@ -453,19 +453,34 @@ async def download_file(path: str):
 # ===== Conversations =====
 @api_router.get("/conversations")
 async def list_conversations(user: dict = Depends(get_current_user)):
-    cursor = db.conversations.find({"participants": user["user_id"]}, {"_id": 0}).sort("updated_at", -1)
-    convs = []
-    async for c in cursor:
-        # Enrich with other participants info
+    convs = await db.conversations.find({"participants": user["user_id"]}, {"_id": 0}).sort("updated_at", -1).to_list(200)
+    if not convs:
+        return []
+    all_user_ids = set()
+    conv_ids = []
+    for c in convs:
+        conv_ids.append(c["id"])
+        all_user_ids.update([p for p in c["participants"] if p != user["user_id"]])
+    users_map = {}
+    if all_user_ids:
+        async for u in db.users.find(
+            {"user_id": {"$in": list(all_user_ids)}},
+            {"_id": 0, "user_id": 1, "name": 1, "username": 1, "photo_path": 1, "picture": 1}
+        ):
+            users_map[u["user_id"]] = u
+    messages_map = {}
+    async for msg in db.messages.aggregate([
+        {"$match": {"conversation_id": {"$in": conv_ids}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$conversation_id", "last_message": {"$first": "$$ROOT"}}}
+    ]):
+        last = msg["last_message"]
+        last.pop("_id", None)
+        messages_map[msg["_id"]] = last
+    for c in convs:
         other_ids = [p for p in c["participants"] if p != user["user_id"]]
-        others = []
-        async for u in db.users.find({"user_id": {"$in": other_ids}}, {"_id": 0, "user_id": 1, "name": 1, "username": 1, "photo_path": 1, "picture": 1}):
-            others.append(u)
-        c["other_participants"] = others
-        # Last message
-        last = await db.messages.find_one({"conversation_id": c["id"]}, {"_id": 0}, sort=[("created_at", -1)])
-        c["last_message"] = last
-        convs.append(c)
+        c["other_participants"] = [users_map[uid] for uid in other_ids if uid in users_map]
+        c["last_message"] = messages_map.get(c["id"])
     return convs
 
 
