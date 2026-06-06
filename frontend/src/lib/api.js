@@ -1,6 +1,11 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const DEFAULT_BACKEND_URL = "https://facciamo-ape-api.onrender.com";
+const rawBackendUrl = (process.env.REACT_APP_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
+// Legacy Netlify env pointed at a non-existent Render service name.
+const BACKEND_URL = rawBackendUrl.includes("facciamo-ape-backend.onrender.com")
+  ? DEFAULT_BACKEND_URL
+  : rawBackendUrl;
 export { BACKEND_URL };
 export const API = `${BACKEND_URL}/api`;
 
