@@ -25,14 +25,6 @@ services:
       - key: BREVO_API_KEY
         sync: false
       - key: EMAIL_FROM
-        value: Facciamo Ape <facciamoape@zohomail.eu>
+        value: lcammarota24@gmail.com
       - key: EMAIL_FROM_NAME
         value: Facciamo Ape
-      - key: SMTP_HOST
-        value: smtp.zoho.eu
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        value: facciamoape@zohomail.eu
-      - key: SMTP_PASSWORD
-        sync: false

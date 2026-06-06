@@ -402,7 +402,7 @@ async def auth_register(body: RegisterRequest, response: Response, background_ta
     if not email_configured():
         raise HTTPException(
             status_code=503,
-            detail="Registrazione email non disponibile. Su Render free usa BREVO_API_KEY (SMTP Zoho è bloccato).",
+            detail="Registrazione email non disponibile. Configura BREVO_API_KEY su Render.",
         )
     user = await create_password_user(
         email=body.email,
@@ -497,7 +497,7 @@ async def request_magic_link(body: MagicLinkRequest):
             }
         raise HTTPException(
             status_code=503,
-            detail="Invio email non configurato. Aggiungi SMTP_PASSWORD per facciamoape@zohomail.eu su Render.",
+            detail="Invio email non configurato. Aggiungi BREVO_API_KEY su Render.",
         )
     return {"ok": True, "message": "Controlla la tua email per il link di accesso."}
 
