@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/App";
@@ -29,6 +30,10 @@ export default function Landing() {
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
+  const scrollToLogin = () => {
+    document.getElementById("entra")?.scrollIntoView({ behavior: "smooth" });
+  };
+
   const handleWaitlist = async (e) => {
     e.preventDefault();
     if (!email || !city) return;
@@ -56,7 +61,7 @@ export default function Landing() {
             Apri l'app →
           </a>
         ) : (
-          <button onClick={handleGoogle} data-testid="nav-login-btn" className="text-sm font-bold text-ape-text border border-ape-border hover:border-ape-secondary rounded-full px-5 py-2 transition-colors">
+          <button onClick={scrollToLogin} data-testid="nav-login-btn" className="text-sm font-bold text-ape-text border border-ape-border hover:border-ape-secondary rounded-full px-5 py-2 transition-colors">
             Entra
           </button>
         )}
@@ -138,9 +143,39 @@ export default function Landing() {
                 </button>
               </form>
             )}
-            <button onClick={handleGoogle} data-testid="cta-google-btn" className="mt-4 text-sm text-ape-textMuted hover:text-ape-secondary underline-offset-4 hover:underline">
-              o entra direttamente con Google →
-            </button>
+            <div id="entra" className="mt-8 bg-ape-surface/80 backdrop-blur-md border border-ape-border rounded-2xl p-6 sm:p-8">
+              <p className="text-xs uppercase tracking-[0.2em] text-ape-secondary font-bold mb-4">Accedi</p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link
+                  to="/register"
+                  data-testid="cta-register-btn"
+                  className="flex-1 text-center bg-ape-primary hover:bg-ape-primaryHover text-ape-text font-bold rounded-full px-7 py-4 transition-all shadow-[0_0_25px_rgba(232,93,4,0.4)]"
+                >
+                  Registrati con email
+                </Link>
+                <Link
+                  to="/login"
+                  data-testid="cta-login-btn"
+                  className="flex-1 text-center bg-ape-surface border border-ape-secondary/50 hover:border-ape-secondary text-ape-text font-bold rounded-full px-7 py-4 transition-all"
+                >
+                  Accedi
+                </Link>
+              </div>
+              <div className="flex items-center gap-3 my-6">
+                <div className="flex-1 h-px bg-ape-border" />
+                <span className="text-xs uppercase tracking-widest text-ape-textMuted">oppure</span>
+                <div className="flex-1 h-px bg-ape-border" />
+              </div>
+              <button
+                onClick={handleGoogle}
+                data-testid="cta-google-btn"
+                className="w-full sm:w-auto bg-ape-bg border border-ape-border hover:border-ape-primary/40 text-ape-text font-bold rounded-full px-7 py-4 transition-all"
+              >
+                Entra con Google
+              </button>
+            </div>
+
+            <p className="mt-6 text-sm text-ape-textMuted">Non siamo ancora in città? Lascia email e città — ti avvisiamo.</p>
           </div>
         </div>
       </section>

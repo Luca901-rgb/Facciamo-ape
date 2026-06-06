@@ -11,11 +11,21 @@ import math
 import json
 import asyncio
 import io
+import secrets
+import urllib.parse
+import bcrypt
 import requests
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Dict, Set
 from datetime import datetime, timezone, timedelta
+
+from email_service import (
+    email_configured,
+    send_magic_link_email,
+    send_password_reset_email,
+    send_welcome_email,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -29,6 +39,9 @@ gridfs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="uploads")
 APP_NAME = os.environ.get("APP_NAME", "facciamoape")
 ADMIN_EMAILS = set(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+MAGIC_LINK_TTL_MINUTES = int(os.environ.get("MAGIC_LINK_TTL_MINUTES", "15"))
+PASSWORD_RESET_TTL_MINUTES = int(os.environ.get("PASSWORD_RESET_TTL_MINUTES", "60"))
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # Supported university cities (lat, lng of city center)
@@ -69,6 +82,36 @@ def set_session_cookie(response: Response, session_token: str):
     )
 
 
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+async def create_session_for_user(user_id: str, response: Response) -> str:
+    session_token = f"sess_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "session_token": session_token,
+        "user_id": user_id,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    set_session_cookie(response, session_token)
+    return session_token
+
+
+async def _resolve_referrer(referrer_username: Optional[str], user_id: str) -> Optional[str]:
+    if not referrer_username:
+        return None
+    ref = await db.users.find_one({"username": referrer_username.strip().lower()}, {"_id": 0})
+    if ref and ref["user_id"] != user_id:
+        return ref["user_id"]
+    return None
+
+
 async def upsert_user_from_oauth(
     email: str,
     name: str,
@@ -91,17 +134,14 @@ async def upsert_user_from_oauth(
         while await db.users.find_one({"username": username}):
             username = f"{base_username}{suffix}"
             suffix += 1
-        referred_by = None
-        if referrer_username:
-            ref = await db.users.find_one({"username": referrer_username.strip().lower()}, {"_id": 0})
-            if ref and ref["user_id"] != user_id:
-                referred_by = ref["user_id"]
+        referred_by = await _resolve_referrer(referrer_username, user_id)
         await db.users.insert_one({
             "user_id": user_id,
             "email": email,
             "name": name,
             "picture": picture,
             "username": username,
+            "password_hash": None,
             "age": None,
             "city": None,
             "zone": None,
@@ -119,6 +159,55 @@ async def upsert_user_from_oauth(
             "is_suspended": False,
             "created_at": datetime.now(timezone.utc).isoformat()
         })
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return user
+
+
+async def create_password_user(
+    email: str,
+    name: str,
+    password: str,
+    referrer_username: Optional[str] = None,
+) -> dict:
+    email = email.strip().lower()
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=409, detail="Email già registrata. Accedi o reimposta la password.")
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    base_username = email.split("@")[0].lower().replace(".", "_")[:20]
+    username = base_username
+    suffix = 1
+    while await db.users.find_one({"username": username}):
+        username = f"{base_username}{suffix}"
+        suffix += 1
+    is_admin = email in ADMIN_EMAILS
+    referred_by = await _resolve_referrer(referrer_username, user_id)
+    await db.users.insert_one({
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "picture": None,
+        "username": username,
+        "password_hash": hash_password(password),
+        "age": None,
+        "city": None,
+        "zone": None,
+        "time_slot": None,
+        "drink": None,
+        "bio": None,
+        "photo_path": None,
+        "lat": None,
+        "lng": None,
+        "aperitivi_count": 0,
+        "blocked_users": [],
+        "referred_by": referred_by,
+        "referral_completed_with": [],
+        "is_admin": is_admin,
+        "is_suspended": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    if not send_welcome_email(email, name):
+        logger.warning("Welcome email not sent to %s", email)
     return await db.users.find_one({"user_id": user_id}, {"_id": 0})
 
 
@@ -195,6 +284,37 @@ class WaitlistEntry(BaseModel):
     city: str
 
 
+class MagicLinkRequest(BaseModel):
+    email: EmailStr
+    referrer_username: Optional[str] = None
+
+
+class MagicLinkVerify(BaseModel):
+    token: str
+    referrer_username: Optional[str] = None
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    name: str = Field(min_length=1, max_length=80)
+    referrer_username: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+
+
 class MessageCreate(BaseModel):
     text: str
 
@@ -209,6 +329,12 @@ class AddParticipant(BaseModel):
 
 
 # ===== Auth helper =====
+def public_user(user: dict) -> dict:
+    data = dict(user)
+    data.pop("password_hash", None)
+    return data
+
+
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("session_token")
     if not token:
@@ -230,7 +356,7 @@ async def get_current_user(request: Request) -> dict:
     user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    return user
+    return public_user(user)
 
 
 # ===== Auth endpoints =====
@@ -265,7 +391,137 @@ async def auth_session(request: Request, response: Response):
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     set_session_cookie(response, session_token)
-    return user
+    return public_user(user)
+
+
+@api_router.post("/auth/register")
+async def auth_register(body: RegisterRequest, response: Response):
+    if not email_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Registrazione email non disponibile. Configura SMTP Zoho (SMTP_PASSWORD) su Render.",
+        )
+    user = await create_password_user(
+        email=body.email,
+        name=body.name.strip(),
+        password=body.password,
+        referrer_username=body.referrer_username,
+    )
+    await create_session_for_user(user["user_id"], response)
+    return public_user(user)
+
+
+@api_router.post("/auth/login")
+async def auth_login(body: LoginRequest, response: Response):
+    email = body.email.strip().lower()
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user or not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Email o password non validi")
+    if not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Email o password non validi")
+    if user.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Account sospeso")
+    await create_session_for_user(user["user_id"], response)
+    return public_user(user)
+
+
+@api_router.post("/auth/forgot-password")
+async def auth_forgot_password(body: ForgotPasswordRequest):
+    email = body.email.strip().lower()
+    user = await db.users.find_one({"email": email}, {"_id": 0, "user_id": 1, "email": 1})
+    if user and email_configured():
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_TTL_MINUTES)
+        await db.password_reset_tokens.delete_many({"email": email, "used": False})
+        await db.password_reset_tokens.insert_one({
+            "token": token,
+            "email": email,
+            "user_id": user["user_id"],
+            "expires_at": expires_at.isoformat(),
+            "used": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        link = f"{FRONTEND_URL}/auth/reset-password?token={urllib.parse.quote(token)}"
+        if not send_password_reset_email(email, link, PASSWORD_RESET_TTL_MINUTES):
+            logger.warning("Password reset email not sent to %s", email)
+    return {"ok": True, "message": "Se l'email è registrata, riceverai un link per reimpostare la password."}
+
+
+@api_router.post("/auth/reset-password")
+async def auth_reset_password(body: ResetPasswordRequest):
+    record = await db.password_reset_tokens.find_one({"token": body.token, "used": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=401, detail="Link non valido o già usato")
+    expires_at = record["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Link scaduto")
+    await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})
+    await db.users.update_one(
+        {"user_id": record["user_id"]},
+        {"$set": {"password_hash": hash_password(body.password)}},
+    )
+    return {"ok": True, "message": "Password aggiornata. Ora puoi accedere."}
+
+
+@api_router.post("/auth/magic-link")
+async def request_magic_link(body: MagicLinkRequest):
+    email = body.email.strip().lower()
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=MAGIC_LINK_TTL_MINUTES)
+    await db.magic_links.delete_many({"email": email, "used": False})
+    await db.magic_links.insert_one({
+        "token": token,
+        "email": email,
+        "referrer_username": body.referrer_username,
+        "expires_at": expires_at.isoformat(),
+        "used": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    link = f"{FRONTEND_URL}/auth/verify?token={urllib.parse.quote(token)}"
+    sent = send_magic_link_email(email, link, MAGIC_LINK_TTL_MINUTES)
+    if not sent:
+        if "localhost" in FRONTEND_URL or os.environ.get("MAGIC_LINK_DEV") == "true":
+            logger.info("DEV magic link for %s: %s", email, link)
+            return {
+                "ok": True,
+                "message": "Controlla la tua email per il link di accesso.",
+                "dev_link": link,
+            }
+        raise HTTPException(
+            status_code=503,
+            detail="Invio email non configurato. Aggiungi SMTP_PASSWORD per facciamoape@zohomail.eu su Render.",
+        )
+    return {"ok": True, "message": "Controlla la tua email per il link di accesso."}
+
+
+@api_router.post("/auth/magic-link/verify")
+async def verify_magic_link(body: MagicLinkVerify, response: Response):
+    record = await db.magic_links.find_one({"token": body.token, "used": False}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=401, detail="Link non valido o già usato")
+    expires_at = record["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Link scaduto")
+    await db.magic_links.update_one({"token": body.token}, {"$set": {"used": True}})
+    email = record["email"]
+    referrer = body.referrer_username or record.get("referrer_username")
+    display_name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
+    user = await upsert_user_from_oauth(
+        email=email,
+        name=display_name,
+        picture=None,
+        referrer_username=referrer,
+    )
+    await create_session_for_user(user["user_id"], response)
+    return public_user(user)
 
 
 @api_router.get("/auth/me")
@@ -912,6 +1168,8 @@ async def startup():
         await db.users.create_index("email", unique=True)
         await db.users.create_index("username", unique=True, sparse=True)
         await db.user_sessions.create_index("session_token", unique=True)
+        await db.magic_links.create_index("token", unique=True)
+        await db.password_reset_tokens.create_index("token", unique=True)
         logger.info("Indexes ensured")
     except Exception as e:
         logger.error(f"Index creation failed: {e}")

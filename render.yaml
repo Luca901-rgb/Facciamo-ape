@@ -1,22 +1,36 @@
-services:
-  - type: web
-    name: facciamo-ape-api
-    runtime: python
-    rootDir: backend
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/
-    envVars:
-      - key: MONGO_URL
-        sync: false
-      - key: DB_NAME
-        value: facciamoape
-      - key: EMERGENT_LLM_KEY
-        sync: false
-      - key: APP_NAME
-        value: facciamoape
-      - key: CORS_ORIGINS
-        sync: false
-      - key: ADMIN_EMAILS
-        sync: false
+services:
+  - type: web
+    name: facciamo-ape-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        value: facciamoape
+      - key: EMERGENT_LLM_KEY
+        sync: false
+      - key: APP_NAME
+        value: facciamoape
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: FRONTEND_URL
+        value: https://facciamoape.netlify.app
+      - key: EMAIL_FROM
+        value: Facciamo Ape <facciamoape@zohomail.eu>
+      - key: EMAIL_FROM_NAME
+        value: Facciamo Ape
+      - key: SMTP_HOST
+        value: smtp.zoho.eu
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        value: facciamoape@zohomail.eu
+      - key: SMTP_PASSWORD
+        sync: false

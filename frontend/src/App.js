@@ -6,6 +6,11 @@ import { api } from "@/lib/api";
 
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
+import MagicLinkVerify from "@/pages/MagicLinkVerify";
+import Login from "@/pages/Login";
+import Register from "@/pages/Register";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Onboarding from "@/pages/Onboarding";
 import Explore from "@/pages/Explore";
 import Profile from "@/pages/Profile";
@@ -34,6 +39,10 @@ function AuthProvider({ children }) {
 
   useEffect(() => {
     if (window.location.hash?.includes("session_id=")) {
+      setLoading(false);
+      return;
+    }
+    if (window.location.pathname === "/auth/verify" && new URLSearchParams(window.location.search).get("token")) {
       setLoading(false);
       return;
     }
@@ -72,6 +81,11 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/auth/reset-password" element={<ResetPassword />} />
+      <Route path="/auth/verify" element={<MagicLinkVerify />} />
       <Route path="/onboarding" element={<Protected needsOnboarding={false}><Onboarding /></Protected>} />
       <Route path="/explore" element={<Protected><Explore /></Protected>} />
       <Route path="/me" element={<Protected><ProfileMe /></Protected>} />
