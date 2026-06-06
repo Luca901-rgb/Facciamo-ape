@@ -7,7 +7,7 @@ import AuthShell, { inputCls, btnPrimaryCls } from "@/pages/AuthShell";
 
 export default function Register() {
   const navigate = useNavigate();
-  const { setUser, refresh } = useAuth();
+  const { completeAuth } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,12 +25,11 @@ export default function Register() {
         referrer_username,
       });
       sessionStorage.removeItem("ref");
-      setUser(data);
-      await refresh();
+      completeAuth(data);
       toast.success("Account creato! Controlla la email di benvenuto.");
       navigate("/onboarding", { replace: true });
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Registrazione non riuscita");
+      toast.error(err?.response?.data?.detail || err?.message || "Registrazione non riuscita");
     } finally {
       setLoading(false);
     }

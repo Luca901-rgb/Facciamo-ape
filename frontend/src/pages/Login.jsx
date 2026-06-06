@@ -7,7 +7,7 @@ import AuthShell, { inputCls, btnPrimaryCls } from "@/pages/AuthShell";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { setUser, refresh } = useAuth();
+  const { completeAuth } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,15 +17,14 @@ export default function Login() {
     setLoading(true);
     try {
       const { data } = await api.post("/auth/login", { email, password });
-      setUser(data);
-      await refresh();
-      if (!data.age || !data.city || !data.zone || !data.time_slot || !data.drink) {
+      const user = completeAuth(data);
+      if (!user.age || !user.city || !user.zone || !user.time_slot || !user.drink) {
         navigate("/onboarding", { replace: true });
       } else {
         navigate("/explore", { replace: true });
       }
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Accesso non riuscito");
+      toast.error(err?.response?.data?.detail || err?.message || "Accesso non riuscito");
     } finally {
       setLoading(false);
     }

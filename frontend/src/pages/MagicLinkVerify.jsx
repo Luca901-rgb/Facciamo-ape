@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 export default function MagicLinkVerify() {
   const navigate = useNavigate();
-  const { setUser, refresh } = useAuth();
+  const { completeAuth } = useAuth();
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get("token");
@@ -19,10 +19,9 @@ export default function MagicLinkVerify() {
         const referrer_username = sessionStorage.getItem("ref") || undefined;
         const { data } = await api.post("/auth/magic-link/verify", { token, referrer_username });
         sessionStorage.removeItem("ref");
-        setUser(data);
+        const user = completeAuth(data);
         window.history.replaceState(null, "", window.location.pathname);
-        await refresh();
-        if (!data.age || !data.city || !data.zone || !data.time_slot || !data.drink) {
+        if (!user.age || !user.city || !user.zone || !user.time_slot || !user.drink) {
           navigate("/onboarding", { replace: true });
         } else {
           navigate("/explore", { replace: true });

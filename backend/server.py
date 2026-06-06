@@ -338,6 +338,12 @@ def public_user(user: dict) -> dict:
     return data
 
 
+def auth_response(user: dict, session_token: str) -> dict:
+    data = public_user(user)
+    data["session_token"] = session_token
+    return data
+
+
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("session_token")
     if not token:
@@ -394,7 +400,7 @@ async def auth_session(request: Request, response: Response):
         "created_at": datetime.now(timezone.utc).isoformat()
     })
     set_session_cookie(response, session_token)
-    return public_user(user)
+    return auth_response(user, session_token)
 
 
 @api_router.post("/auth/register")
@@ -411,8 +417,8 @@ async def auth_register(body: RegisterRequest, response: Response, background_ta
         referrer_username=body.referrer_username,
     )
     background_tasks.add_task(_send_welcome_safe, user["email"], user["name"])
-    await create_session_for_user(user["user_id"], response)
-    return public_user(user)
+    session_token = await create_session_for_user(user["user_id"], response)
+    return auth_response(user, session_token)
 
 
 @api_router.post("/auth/login")
@@ -425,8 +431,8 @@ async def auth_login(body: LoginRequest, response: Response):
         raise HTTPException(status_code=401, detail="Email o password non validi")
     if user.get("is_suspended"):
         raise HTTPException(status_code=403, detail="Account sospeso")
-    await create_session_for_user(user["user_id"], response)
-    return public_user(user)
+    session_token = await create_session_for_user(user["user_id"], response)
+    return auth_response(user, session_token)
 
 
 @api_router.post("/auth/forgot-password")
@@ -524,8 +530,8 @@ async def verify_magic_link(body: MagicLinkVerify, response: Response):
         picture=None,
         referrer_username=referrer,
     )
-    await create_session_for_user(user["user_id"], response)
-    return public_user(user)
+    session_token = await create_session_for_user(user["user_id"], response)
+    return auth_response(user, session_token)
 
 
 @api_router.get("/auth/me")
@@ -536,6 +542,10 @@ async def auth_me(user: dict = Depends(get_current_user)):
 @api_router.post("/auth/logout")
 async def auth_logout(request: Request, response: Response):
     token = request.cookies.get("session_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth.split(" ", 1)[1]
     if token:
         await db.user_sessions.delete_one({"session_token": token})
     response.delete_cookie("session_token", path="/")

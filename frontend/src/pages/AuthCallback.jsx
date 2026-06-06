@@ -5,7 +5,7 @@ import { useAuth } from "@/App";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const { setUser, refresh } = useAuth();
+  const { completeAuth } = useAuth();
 
   useEffect(() => {
     const hash = window.location.hash;
@@ -20,12 +20,9 @@ export default function AuthCallback() {
         const referrer_username = sessionStorage.getItem("ref") || undefined;
         const { data } = await api.post("/auth/session", { session_id: sessionId, referrer_username });
         sessionStorage.removeItem("ref");
-        setUser(data);
-        // clean hash
+        const user = completeAuth(data);
         window.history.replaceState(null, "", window.location.pathname);
-        // Refresh to get cookie-backed session
-        await refresh();
-        if (!data.age || !data.city) {
+        if (!user.age || !user.city) {
           navigate("/onboarding", { replace: true });
         } else {
           navigate("/explore", { replace: true });

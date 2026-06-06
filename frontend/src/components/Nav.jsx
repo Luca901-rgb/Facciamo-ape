@@ -1,14 +1,12 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { Compass, MessageCircle, User, LogOut, Shield } from "lucide-react";
-import { api } from "@/lib/api";
 import { useAuth } from "@/App";
 
 export default function Nav() {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
+  const { user, logout } = useAuth();
   const handleLogout = async () => {
-    try { await api.post("/auth/logout"); } catch {}
-    setUser(null);
+    await logout();
     navigate("/", { replace: true });
   };
 

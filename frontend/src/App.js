@@ -2,7 +2,7 @@ import { useEffect, useState, createContext, useContext } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
-import { api } from "@/lib/api";
+import { api, applyAuthResponse, getSessionToken, setSessionToken } from "@/lib/api";
 
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
@@ -31,10 +31,26 @@ function AuthProvider({ children }) {
       const { data } = await api.get("/auth/me");
       setUser(data);
     } catch {
-      setUser(null);
+      if (!getSessionToken()) setUser(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  const completeAuth = (data) => {
+    const user = applyAuthResponse(data);
+    setUser(user);
+    return user;
+  };
+
+  const logout = async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      /* ignore */
+    }
+    setSessionToken(null);
+    setUser(null);
   };
 
   useEffect(() => {
@@ -50,7 +66,7 @@ function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, refresh }}>
+    <AuthContext.Provider value={{ user, setUser, loading, refresh, completeAuth, logout }}>
       {children}
     </AuthContext.Provider>
   );
