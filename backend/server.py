@@ -1,14 +1,18 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query, WebSocket, WebSocketDisconnect, Depends, Cookie
-from fastapi.responses import Response as FastResponse
+from fastapi.responses import Response as FastResponse, RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+from bson import ObjectId
 import os
 import logging
 import uuid
 import math
 import json
 import asyncio
+import io
+import secrets
+import urllib.parse
 import requests
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -22,13 +26,14 @@ load_dotenv(ROOT_DIR / '.env')
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+gridfs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="uploads")
 
-# Storage config
-STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = os.environ.get("APP_NAME", "facciamoape")
 ADMIN_EMAILS = set(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
-storage_key: Optional[str] = None
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # Supported university cities (lat, lng of city center)
 SUPPORTED_CITIES = [
@@ -60,35 +65,113 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 
-def init_storage():
-    global storage_key
-    if storage_key:
-        return storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    resp.raise_for_status()
-    storage_key = resp.json()["storage_key"]
-    return storage_key
+def backend_public_url(request: Request) -> str:
+    env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("BACKEND_PUBLIC_URL")
+    if env:
+        return env.rstrip("/")
+    return str(request.base_url).rstrip("/")
 
 
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120
+def set_session_cookie(response: Response, session_token: str):
+    response.set_cookie(
+        "session_token", session_token,
+        httponly=True, secure=True, samesite="none",
+        max_age=7 * 24 * 60 * 60, path="/"
     )
-    resp.raise_for_status()
-    return resp.json()
 
 
-def get_object(path: str):
-    key = init_storage()
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
+async def upsert_user_from_oauth(
+    email: str,
+    name: str,
+    picture: Optional[str],
+    referrer_username: Optional[str] = None,
+) -> dict:
+    is_admin = email.lower() in ADMIN_EMAILS
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture, "is_admin": is_admin}}
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        base_username = email.split("@")[0].lower().replace(".", "_")[:20]
+        username = base_username
+        suffix = 1
+        while await db.users.find_one({"username": username}):
+            username = f"{base_username}{suffix}"
+            suffix += 1
+        referred_by = None
+        if referrer_username:
+            ref = await db.users.find_one({"username": referrer_username.strip().lower()}, {"_id": 0})
+            if ref and ref["user_id"] != user_id:
+                referred_by = ref["user_id"]
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "username": username,
+            "age": None,
+            "city": None,
+            "zone": None,
+            "time_slot": None,
+            "drink": None,
+            "bio": None,
+            "photo_path": None,
+            "lat": None,
+            "lng": None,
+            "aperitivi_count": 0,
+            "blocked_users": [],
+            "referred_by": referred_by,
+            "referral_completed_with": [],
+            "is_admin": is_admin,
+            "is_suspended": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+    return await db.users.find_one({"user_id": user_id}, {"_id": 0})
+
+
+async def start_session(user_id: str, response: Response) -> str:
+    session_token = f"sess_{uuid.uuid4().hex}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "session_token": session_token,
+        "user_id": user_id,
+        "expires_at": expires_at.isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    set_session_cookie(response, session_token)
+    return session_token
+
+
+async def store_upload(path: str, data: bytes, content_type: str, user_id: str) -> dict:
+    file_id = await gridfs_bucket.upload_from_stream(
+        path,
+        io.BytesIO(data),
+        metadata={"content_type": content_type, "user_id": user_id, "storage_path": path},
     )
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+    await db.files.insert_one({
+        "id": str(uuid.uuid4()),
+        "storage_path": path,
+        "gridfs_id": str(file_id),
+        "content_type": content_type,
+        "size": len(data),
+        "user_id": user_id,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    return {"path": path, "size": len(data)}
+
+
+async def read_upload(path: str):
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
+    if not record or not record.get("gridfs_id"):
+        raise HTTPException(status_code=404, detail="File not found")
+    stream = await gridfs_bucket.open_download_stream(ObjectId(record["gridfs_id"]))
+    data = await stream.read()
+    return data, record.get("content_type") or "application/octet-stream"
 
 
 app = FastAPI()
@@ -175,6 +258,79 @@ async def get_current_user(request: Request) -> dict:
 
 
 # ===== Auth endpoints =====
+@api_router.get("/auth/google")
+async def google_login(request: Request, ref: Optional[str] = Query(None)):
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="Google OAuth non configurato sul server")
+    state = secrets.token_urlsafe(32)
+    redirect_uri = f"{backend_public_url(request)}/api/auth/google/callback"
+    params = urllib.parse.urlencode({
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "online",
+        "include_granted_scopes": "true",
+        "state": state,
+        "prompt": "select_account",
+    })
+    response = RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+    response.set_cookie("oauth_state", state, httponly=True, secure=True, samesite="lax", max_age=600, path="/")
+    if ref:
+        response.set_cookie("oauth_ref", ref.strip()[:40], httponly=True, secure=True, samesite="lax", max_age=600, path="/")
+    return response
+
+
+@api_router.get("/auth/google/callback")
+async def google_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    if error:
+        return RedirectResponse(f"{FRONTEND_URL}/?auth_error={urllib.parse.quote(error)}")
+    stored_state = request.cookies.get("oauth_state")
+    if not code or not state or state != stored_state:
+        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=invalid_state")
+    redirect_uri = f"{backend_public_url(request)}/api/auth/google/callback"
+    token_resp = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+        timeout=30,
+    )
+    if token_resp.status_code != 200:
+        logger.error(f"Google token error: {token_resp.text}")
+        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=token_failed")
+    access_token = token_resp.json().get("access_token")
+    profile_resp = requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+    if profile_resp.status_code != 200:
+        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=profile_failed")
+    profile = profile_resp.json()
+    email = profile.get("email")
+    if not email:
+        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=no_email")
+    referrer = request.cookies.get("oauth_ref") or None
+    user = await upsert_user_from_oauth(
+        email=email,
+        name=profile.get("name") or email.split("@")[0],
+        picture=profile.get("picture"),
+        referrer_username=referrer,
+    )
+    needs_onboarding = not all([user.get("age"), user.get("city"), user.get("zone"), user.get("time_slot"), user.get("drink")])
+    target = f"{FRONTEND_URL}/onboarding" if needs_onboarding else f"{FRONTEND_URL}/explore"
+    response = RedirectResponse(target)
+    await start_session(user["user_id"], response)
+    response.delete_cookie("oauth_state", path="/")
+    response.delete_cookie("oauth_ref", path="/")
+    return response
+
+
 @api_router.post("/auth/session")
 async def auth_session(request: Request, response: Response):
     body = await request.json()
@@ -191,70 +347,21 @@ async def auth_session(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid session_id")
     data = r.json()
 
-    email = data["email"]
-    is_admin = email.lower() in ADMIN_EMAILS
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user_id = existing["user_id"]
-        # Update picture/name/admin flag if changed
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": data["name"], "picture": data.get("picture"), "is_admin": is_admin}}
-        )
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        # Auto-generate a username from email
-        base_username = email.split("@")[0].lower().replace(".", "_")[:20]
-        username = base_username
-        suffix = 1
-        while await db.users.find_one({"username": username}):
-            username = f"{base_username}{suffix}"
-            suffix += 1
-        referred_by = None
-        if referrer_username:
-            ref = await db.users.find_one({"username": referrer_username.strip().lower()}, {"_id": 0})
-            if ref and ref["user_id"] != user_id:
-                referred_by = ref["user_id"]
-        new_user = {
-            "user_id": user_id,
-            "email": email,
-            "name": data["name"],
-            "picture": data.get("picture"),
-            "username": username,
-            "age": None,
-            "city": None,
-            "zone": None,
-            "time_slot": None,
-            "drink": None,
-            "bio": None,
-            "photo_path": None,
-            "lat": None,
-            "lng": None,
-            "aperitivi_count": 0,
-            "blocked_users": [],
-            "referred_by": referred_by,
-            "referral_completed_with": [],
-            "is_admin": is_admin,
-            "is_suspended": False,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.users.insert_one(new_user)
-
-    session_token = data["session_token"]
+    user = await upsert_user_from_oauth(
+        email=data["email"],
+        name=data["name"],
+        picture=data.get("picture"),
+        referrer_username=referrer_username,
+    )
+    session_token = data.get("session_token") or f"sess_{uuid.uuid4().hex}"
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await db.user_sessions.insert_one({
         "session_token": session_token,
-        "user_id": user_id,
+        "user_id": user["user_id"],
         "expires_at": expires_at.isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat()
     })
-
-    response.set_cookie(
-        "session_token", session_token,
-        httponly=True, secure=True, samesite="none",
-        max_age=7 * 24 * 60 * 60, path="/"
-    )
-    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    set_session_cookie(response, session_token)
     return user
 
 
@@ -473,35 +580,22 @@ async def maybe_complete_referral(user_a_id: str, user_b_id: str):
 # ===== Upload =====
 @api_router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
-    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
-    path = f"{APP_NAME}/uploads/{user['user_id']}/{uuid.uuid4()}.{ext}"
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+    if ext not in {"jpg", "jpeg", "png", "webp", "gif"}:
+        raise HTTPException(status_code=400, detail="Formato immagine non supportato")
     data = await file.read()
-    result = put_object(path, data, file.content_type or "image/jpeg")
-    await db.files.insert_one({
-        "id": str(uuid.uuid4()),
-        "storage_path": result["path"],
-        "original_filename": file.filename,
-        "content_type": file.content_type,
-        "size": result["size"],
-        "user_id": user["user_id"],
-        "is_deleted": False,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="Immagine troppo grande (max 5MB)")
+    path = f"{APP_NAME}/uploads/{user['user_id']}/{uuid.uuid4()}.{ext}"
+    content_type = file.content_type or "image/jpeg"
+    result = await store_upload(path, data, content_type, user["user_id"])
     return {"path": result["path"]}
 
 
 @api_router.get("/files/{path:path}")
 async def download_file(path: str):
-    record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
-    if not record:
-        # Allow demo seed images that are not in files collection (seed inserts directly)
-        try:
-            data, content_type = get_object(path)
-            return FastResponse(content=data, media_type=content_type)
-        except Exception:
-            raise HTTPException(status_code=404, detail="File not found")
-    data, content_type = get_object(path)
-    return FastResponse(content=data, media_type=record.get("content_type") or content_type)
+    data, content_type = await read_upload(path)
+    return FastResponse(content=data, media_type=content_type)
 
 
 # ===== Conversations =====
@@ -899,11 +993,6 @@ async def seed_demo():
 
 @app.on_event("startup")
 async def startup():
-    try:
-        init_storage()
-        logger.info("Storage initialized")
-    except Exception as e:
-        logger.error(f"Storage init failed: {e}")
     # Demo seed disabled for production
     try:
         deleted = await db.users.delete_many({"is_demo": True})
