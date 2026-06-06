@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
-import { BACKEND_URL } from "@/lib/api";
 import { useAuth } from "@/App";
 import { toast } from "sonner";
 import { Wine, Beer, Martini, GlassWater, MapPin, Sparkles } from "lucide-react";
@@ -15,11 +14,6 @@ export default function Landing() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const authError = params.get("auth_error");
-    if (authError) {
-      toast.error("Accesso Google non riuscito. Riprova.");
-      window.history.replaceState(null, "", window.location.pathname);
-    }
     const ref = params.get("ref");
     if (ref) {
       sessionStorage.setItem("ref", ref);
@@ -31,9 +25,8 @@ export default function Landing() {
   }, []);
 
   const handleGoogle = () => {
-    const ref = sessionStorage.getItem("ref");
-    const params = ref ? `?ref=${encodeURIComponent(ref)}` : "";
-    window.location.href = `${BACKEND_URL}/api/auth/google${params}`;
+    const redirectUrl = window.location.origin + "/explore";
+    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
   const handleWaitlist = async (e) => {

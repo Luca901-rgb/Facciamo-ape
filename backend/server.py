@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query, WebSocket, WebSocketDisconnect, Depends, Cookie
-from fastapi.responses import Response as FastResponse, RedirectResponse
+from fastapi.responses import Response as FastResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
@@ -11,8 +11,6 @@ import math
 import json
 import asyncio
 import io
-import secrets
-import urllib.parse
 import requests
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -30,9 +28,7 @@ gridfs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="uploads")
 
 APP_NAME = os.environ.get("APP_NAME", "facciamoape")
 ADMIN_EMAILS = set(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # Supported university cities (lat, lng of city center)
@@ -63,13 +59,6 @@ CITY_BY_NAME = {c["name"].lower(): c for c in SUPPORTED_CITIES}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-
-def backend_public_url(request: Request) -> str:
-    env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("BACKEND_PUBLIC_URL")
-    if env:
-        return env.rstrip("/")
-    return str(request.base_url).rstrip("/")
 
 
 def set_session_cookie(response: Response, session_token: str):
@@ -131,19 +120,6 @@ async def upsert_user_from_oauth(
             "created_at": datetime.now(timezone.utc).isoformat()
         })
     return await db.users.find_one({"user_id": user_id}, {"_id": 0})
-
-
-async def start_session(user_id: str, response: Response) -> str:
-    session_token = f"sess_{uuid.uuid4().hex}"
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.insert_one({
-        "session_token": session_token,
-        "user_id": user_id,
-        "expires_at": expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
-    set_session_cookie(response, session_token)
-    return session_token
 
 
 async def store_upload(path: str, data: bytes, content_type: str, user_id: str) -> dict:
@@ -258,79 +234,6 @@ async def get_current_user(request: Request) -> dict:
 
 
 # ===== Auth endpoints =====
-@api_router.get("/auth/google")
-async def google_login(request: Request, ref: Optional[str] = Query(None)):
-    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        raise HTTPException(status_code=500, detail="Google OAuth non configurato sul server")
-    state = secrets.token_urlsafe(32)
-    redirect_uri = f"{backend_public_url(request)}/api/auth/google/callback"
-    params = urllib.parse.urlencode({
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "access_type": "online",
-        "include_granted_scopes": "true",
-        "state": state,
-        "prompt": "select_account",
-    })
-    response = RedirectResponse(f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
-    response.set_cookie("oauth_state", state, httponly=True, secure=True, samesite="lax", max_age=600, path="/")
-    if ref:
-        response.set_cookie("oauth_ref", ref.strip()[:40], httponly=True, secure=True, samesite="lax", max_age=600, path="/")
-    return response
-
-
-@api_router.get("/auth/google/callback")
-async def google_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
-    if error:
-        return RedirectResponse(f"{FRONTEND_URL}/?auth_error={urllib.parse.quote(error)}")
-    stored_state = request.cookies.get("oauth_state")
-    if not code or not state or state != stored_state:
-        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=invalid_state")
-    redirect_uri = f"{backend_public_url(request)}/api/auth/google/callback"
-    token_resp = requests.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "code": code,
-            "client_id": GOOGLE_CLIENT_ID,
-            "client_secret": GOOGLE_CLIENT_SECRET,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-        },
-        timeout=30,
-    )
-    if token_resp.status_code != 200:
-        logger.error(f"Google token error: {token_resp.text}")
-        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=token_failed")
-    access_token = token_resp.json().get("access_token")
-    profile_resp = requests.get(
-        "https://www.googleapis.com/oauth2/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=30,
-    )
-    if profile_resp.status_code != 200:
-        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=profile_failed")
-    profile = profile_resp.json()
-    email = profile.get("email")
-    if not email:
-        return RedirectResponse(f"{FRONTEND_URL}/?auth_error=no_email")
-    referrer = request.cookies.get("oauth_ref") or None
-    user = await upsert_user_from_oauth(
-        email=email,
-        name=profile.get("name") or email.split("@")[0],
-        picture=profile.get("picture"),
-        referrer_username=referrer,
-    )
-    needs_onboarding = not all([user.get("age"), user.get("city"), user.get("zone"), user.get("time_slot"), user.get("drink")])
-    target = f"{FRONTEND_URL}/onboarding" if needs_onboarding else f"{FRONTEND_URL}/explore"
-    response = RedirectResponse(target)
-    await start_session(user["user_id"], response)
-    response.delete_cookie("oauth_state", path="/")
-    response.delete_cookie("oauth_ref", path="/")
-    return response
-
-
 @api_router.post("/auth/session")
 async def auth_session(request: Request, response: Response):
     body = await request.json()
