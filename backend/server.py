@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query, WebSocket, WebSocketDisconnect, Depends, Cookie
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query, WebSocket, WebSocketDisconnect, Depends, Cookie, BackgroundTasks
 from fastapi.responses import Response as FastResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -206,9 +206,12 @@ async def create_password_user(
         "is_suspended": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     })
+    return await db.users.find_one({"user_id": user_id}, {"_id": 0})
+
+
+def _send_welcome_safe(email: str, name: str):
     if not send_welcome_email(email, name):
         logger.warning("Welcome email not sent to %s", email)
-    return await db.users.find_one({"user_id": user_id}, {"_id": 0})
 
 
 async def store_upload(path: str, data: bytes, content_type: str, user_id: str) -> dict:
@@ -395,11 +398,11 @@ async def auth_session(request: Request, response: Response):
 
 
 @api_router.post("/auth/register")
-async def auth_register(body: RegisterRequest, response: Response):
+async def auth_register(body: RegisterRequest, response: Response, background_tasks: BackgroundTasks):
     if not email_configured():
         raise HTTPException(
             status_code=503,
-            detail="Registrazione email non disponibile. Configura SMTP Zoho (SMTP_PASSWORD) su Render.",
+            detail="Registrazione email non disponibile. Su Render free usa BREVO_API_KEY (SMTP Zoho è bloccato).",
         )
     user = await create_password_user(
         email=body.email,
@@ -407,6 +410,7 @@ async def auth_register(body: RegisterRequest, response: Response):
         password=body.password,
         referrer_username=body.referrer_username,
     )
+    background_tasks.add_task(_send_welcome_safe, user["email"], user["name"])
     await create_session_for_user(user["user_id"], response)
     return public_user(user)
 

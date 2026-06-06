@@ -75,24 +75,8 @@ def _email_layout(title: str, body_html: str, button_label: Optional[str] = None
 def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
     plain = text or _html_to_plain(html)
     name, from_email = _sender_parts()
-    smtp_host, smtp_user, smtp_password = _smtp_settings()
 
-    if smtp_host and smtp_user and smtp_password:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = EMAIL_FROM
-            msg["To"] = to
-            msg.attach(MIMEText(plain, "plain", "utf-8"))
-            msg.attach(MIMEText(html, "html", "utf-8"))
-            with smtplib.SMTP(smtp_host, SMTP_PORT, timeout=30) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_password)
-                server.sendmail(from_email, [to], msg.as_string())
-            return True
-        except Exception as e:
-            logger.error("SMTP error: %s", e)
-
+    # Render free tier blocks outbound SMTP (587/465/25). Prefer HTTP APIs in production.
     if BREVO_API_KEY:
         try:
             payload = {
@@ -114,6 +98,24 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
             logger.error("Brevo API failed: %s %s", r.status_code, r.text)
         except Exception as e:
             logger.error("Brevo API error: %s", e)
+
+    smtp_host, smtp_user, smtp_password = _smtp_settings()
+
+    if smtp_host and smtp_user and smtp_password:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = EMAIL_FROM
+            msg["To"] = to
+            msg.attach(MIMEText(plain, "plain", "utf-8"))
+            msg.attach(MIMEText(html, "html", "utf-8"))
+            with smtplib.SMTP(smtp_host, SMTP_PORT, timeout=30) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(from_email, [to], msg.as_string())
+            return True
+        except Exception as e:
+            logger.error("SMTP error: %s (su Render free le porte SMTP sono bloccate)", e)
 
     if RESEND_API_KEY:
         try:
