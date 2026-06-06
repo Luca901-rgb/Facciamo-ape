@@ -37,6 +37,8 @@ export default function ForgotPassword() {
         <form onSubmit={handleSubmit}>
           <input
             type="email"
+            name="email"
+            autoComplete="email"
             required
             placeholder="La tua email"
             value={email}

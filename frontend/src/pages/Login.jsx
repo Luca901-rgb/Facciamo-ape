@@ -37,6 +37,8 @@ export default function Login() {
         <input
           data-testid="login-email-input"
           type="email"
+          name="email"
+          autoComplete="email"
           required
           placeholder="Email"
           value={email}
@@ -46,6 +48,8 @@ export default function Login() {
         <input
           data-testid="login-password-input"
           type="password"
+          name="password"
+          autoComplete="current-password"
           required
           minLength={8}
           placeholder="Password"

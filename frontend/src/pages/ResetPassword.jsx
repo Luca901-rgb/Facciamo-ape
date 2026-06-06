@@ -45,6 +45,8 @@ export default function ResetPassword() {
       <form onSubmit={handleSubmit}>
         <input
           type="password"
+          name="new-password"
+          autoComplete="new-password"
           required
           minLength={8}
           placeholder="Nuova password"
@@ -54,6 +56,8 @@ export default function ResetPassword() {
         />
         <input
           type="password"
+          name="confirm-password"
+          autoComplete="new-password"
           required
           minLength={8}
           placeholder="Conferma password"

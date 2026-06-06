@@ -42,6 +42,8 @@ export default function Register() {
         <input
           data-testid="register-name-input"
           type="text"
+          name="name"
+          autoComplete="name"
           required
           placeholder="Il tuo nome"
           value={name}
@@ -51,6 +53,8 @@ export default function Register() {
         <input
           data-testid="register-email-input"
           type="email"
+          name="email"
+          autoComplete="email"
           required
           placeholder="Email"
           value={email}
@@ -60,6 +64,8 @@ export default function Register() {
         <input
           data-testid="register-password-input"
           type="password"
+          name="new-password"
+          autoComplete="new-password"
           required
           minLength={8}
           placeholder="Password (min. 8 caratteri)"
