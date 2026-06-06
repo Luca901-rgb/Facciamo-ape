@@ -17,9 +17,9 @@ export default function MagicLinkVerify() {
     (async () => {
       try {
         const referrer_username = sessionStorage.getItem("ref") || undefined;
-        const { data } = await api.post("/auth/magic-link/verify", { token, referrer_username });
+        const res = await api.post("/auth/magic-link/verify", { token, referrer_username });
         sessionStorage.removeItem("ref");
-        const user = completeAuth(data);
+        const user = completeAuth(res.data, res);
         window.history.replaceState(null, "", window.location.pathname);
         if (!user.age || !user.city || !user.zone || !user.time_slot || !user.drink) {
           navigate("/onboarding", { replace: true });

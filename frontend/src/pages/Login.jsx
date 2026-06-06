@@ -16,8 +16,8 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
-      const user = completeAuth(data);
+      const res = await api.post("/auth/login", { email, password });
+      const user = completeAuth(res.data, res);
       if (!user.age || !user.city || !user.zone || !user.time_slot || !user.drink) {
         navigate("/onboarding", { replace: true });
       } else {

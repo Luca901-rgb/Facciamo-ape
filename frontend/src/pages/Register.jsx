@@ -18,14 +18,14 @@ export default function Register() {
     setLoading(true);
     try {
       const referrer_username = sessionStorage.getItem("ref") || undefined;
-      const { data } = await api.post("/auth/register", {
+      const res = await api.post("/auth/register", {
         name,
         email,
         password,
         referrer_username,
       });
       sessionStorage.removeItem("ref");
-      completeAuth(data);
+      completeAuth(res.data, res);
       toast.success("Account creato! Controlla la email di benvenuto.");
       navigate("/onboarding", { replace: true });
     } catch (err) {

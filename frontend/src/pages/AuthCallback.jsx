@@ -18,9 +18,9 @@ export default function AuthCallback() {
     (async () => {
       try {
         const referrer_username = sessionStorage.getItem("ref") || undefined;
-        const { data } = await api.post("/auth/session", { session_id: sessionId, referrer_username });
+        const res = await api.post("/auth/session", { session_id: sessionId, referrer_username });
         sessionStorage.removeItem("ref");
-        const user = completeAuth(data);
+        const user = completeAuth(res.data, res);
         window.history.replaceState(null, "", window.location.pathname);
         if (!user.age || !user.city) {
           navigate("/onboarding", { replace: true });

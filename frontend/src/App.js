@@ -27,18 +27,24 @@ function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
+    if (!getSessionToken()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
     } catch {
-      if (!getSessionToken()) setUser(null);
+      setSessionToken(null);
+      setUser(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const completeAuth = (data) => {
-    const user = applyAuthResponse(data);
+  const completeAuth = (data, response) => {
+    const user = applyAuthResponse(data, response);
     setUser(user);
     return user;
   };

@@ -21,8 +21,9 @@ export function getSessionToken() {
 }
 
 /** Persist Bearer token and return user payload without session_token. */
-export function applyAuthResponse(data) {
-  if (data?.session_token) setSessionToken(data.session_token);
+export function applyAuthResponse(data, response) {
+  const token = data?.session_token || response?.headers?.["x-session-token"];
+  if (token) setSessionToken(token);
   const { session_token: _token, ...user } = data;
   return user;
 }

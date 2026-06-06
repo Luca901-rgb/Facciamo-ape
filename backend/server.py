@@ -80,6 +80,8 @@ def set_session_cookie(response: Response, session_token: str):
         httponly=True, secure=True, samesite="none",
         max_age=7 * 24 * 60 * 60, path="/"
     )
+    # Lets the SPA read the token when third-party cookies are blocked.
+    response.headers["X-Session-Token"] = session_token
 
 
 def hash_password(password: str) -> str:
@@ -1191,7 +1193,7 @@ async def startup():
 
 @api_router.get("/")
 async def root():
-    return {"message": "Facciamo Ape?"}
+    return {"message": "Facciamo Ape?", "auth": "session-token-v2"}
 
 
 app.include_router(api_router)
@@ -1202,6 +1204,7 @@ app.add_middleware(
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Session-Token"],
 )
 
 
