@@ -1,6 +1,7 @@
 export function isProfileComplete(user) {
+  const hasPhoto = Boolean(user?.photo_path || user?.picture);
   return Boolean(
-    user?.photo_path &&
+    hasPhoto &&
     user?.age &&
     user?.city &&
     user?.time_slot &&

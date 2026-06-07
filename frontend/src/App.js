@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-route
 import { Toaster } from "@/components/ui/sonner";
 import { api, applyAuthResponse, getSessionToken, setSessionToken } from "@/lib/api";
 import { isProfileComplete } from "@/lib/profile";
+import { isSuperAdmin } from "@/lib/admin";
 import { ChatProvider } from "@/context/ChatContext";
 
 import Landing from "@/pages/Landing";
@@ -91,7 +92,7 @@ function Protected({ children, needsOnboarding = true }) {
     );
   }
   if (!user) return <Navigate to="/" replace />;
-  if (needsOnboarding && !isProfileComplete(user)) {
+  if (needsOnboarding && !isProfileComplete(user) && !isSuperAdmin(user)) {
     if (location.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
   }
   return children;
@@ -116,7 +117,7 @@ function AppRouter() {
       <Route path="/profile/:userId" element={<Protected><Profile /></Protected>} />
       <Route path="/chat" element={<Protected><Chat /></Protected>} />
       <Route path="/chat/:convId" element={<Protected><ChatDetail /></Protected>} />
-      <Route path="/admin" element={<Protected><Admin /></Protected>} />
+      <Route path="/admin" element={<Protected needsOnboarding={false}><Admin /></Protected>} />
     </Routes>
   );
 }

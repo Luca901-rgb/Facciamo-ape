@@ -164,7 +164,7 @@ async def upsert_user_from_oauth(
     picture: Optional[str],
     referrer_username: Optional[str] = None,
 ) -> dict:
-    is_admin = email.lower() in ADMIN_EMAILS
+    is_admin = email.lower() in ADMIN_EMAILS or email.lower() == SUPER_ADMIN_EMAIL
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
@@ -471,8 +471,13 @@ async def auth_register(body: RegisterRequest, response: Response, background_ta
 async def auth_login(body: LoginRequest, response: Response):
     email = body.email.strip().lower()
     user = await db.users.find_one({"email": email}, {"_id": 0})
-    if not user or not user.get("password_hash"):
+    if not user:
         raise HTTPException(status_code=401, detail="Email o password non validi")
+    if not user.get("password_hash"):
+        raise HTTPException(
+            status_code=401,
+            detail="Questo account usa Google. Accedi con Google oppure usa Password dimenticata per crearne una.",
+        )
     if not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Email o password non validi")
     if user.get("is_suspended"):
