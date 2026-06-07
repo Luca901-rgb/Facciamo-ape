@@ -67,6 +67,49 @@ SUPPORTED_CITIES = [
     {"name": "Salerno", "lat": 40.6824, "lng": 14.7681},
     {"name": "Cagliari", "lat": 39.2238, "lng": 9.1217},
     {"name": "Palermo", "lat": 38.1157, "lng": 13.3613},
+    {"name": "Venezia", "lat": 45.4408, "lng": 12.3155},
+    {"name": "Trieste", "lat": 45.6495, "lng": 13.7768},
+    {"name": "Udine", "lat": 46.0711, "lng": 13.2346},
+    {"name": "Brescia", "lat": 45.5416, "lng": 10.2118},
+    {"name": "Bergamo", "lat": 45.6983, "lng": 9.6773},
+    {"name": "Monza", "lat": 45.5845, "lng": 9.2744},
+    {"name": "Como", "lat": 45.8081, "lng": 9.0852},
+    {"name": "Varese", "lat": 45.8206, "lng": 8.8251},
+    {"name": "Novara", "lat": 45.4469, "lng": 8.6218},
+    {"name": "Alessandria", "lat": 44.9070, "lng": 8.6115},
+    {"name": "Savona", "lat": 44.3070, "lng": 8.4810},
+    {"name": "La Spezia", "lat": 44.1025, "lng": 9.8241},
+    {"name": "Livorno", "lat": 43.5485, "lng": 10.3106},
+    {"name": "Arezzo", "lat": 43.4632, "lng": 11.8796},
+    {"name": "Lucca", "lat": 43.8429, "lng": 10.5027},
+    {"name": "Prato", "lat": 43.8777, "lng": 11.1020},
+    {"name": "Rimini", "lat": 44.0678, "lng": 12.5695},
+    {"name": "Ravenna", "lat": 44.4184, "lng": 12.2035},
+    {"name": "Ferrara", "lat": 44.8381, "lng": 11.6198},
+    {"name": "Ancona", "lat": 43.6158, "lng": 13.5189},
+    {"name": "Pesaro", "lat": 43.9107, "lng": 12.9136},
+    {"name": "Urbino", "lat": 43.7263, "lng": 12.6360},
+    {"name": "Camerino", "lat": 43.1386, "lng": 13.0689},
+    {"name": "Lecce", "lat": 40.3515, "lng": 18.1750},
+    {"name": "Taranto", "lat": 40.4644, "lng": 17.2470},
+    {"name": "Brindisi", "lat": 40.6327, "lng": 17.9418},
+    {"name": "Reggio Calabria", "lat": 38.1113, "lng": 15.6478},
+    {"name": "Messina", "lat": 38.1938, "lng": 15.5540},
+    {"name": "Siracusa", "lat": 37.0755, "lng": 15.2866},
+    {"name": "Ragusa", "lat": 36.9269, "lng": 14.7255},
+    {"name": "Trapani", "lat": 38.0176, "lng": 12.5365},
+    {"name": "Agrigento", "lat": 37.3111, "lng": 13.5765},
+    {"name": "Latina", "lat": 41.4675, "lng": 12.9036},
+    {"name": "Viterbo", "lat": 42.4207, "lng": 12.1077},
+    {"name": "Terni", "lat": 42.5636, "lng": 12.6427},
+    {"name": "Caserta", "lat": 41.0732, "lng": 14.3324},
+    {"name": "Avellino", "lat": 40.9146, "lng": 14.7915},
+    {"name": "Potenza", "lat": 40.6404, "lng": 15.8056},
+    {"name": "Matera", "lat": 40.6664, "lng": 16.6043},
+    {"name": "Cosenza", "lat": 39.2983, "lng": 16.2536},
+    {"name": "Catanzaro", "lat": 38.9098, "lng": 16.5877},
+    {"name": "Sassari", "lat": 40.7259, "lng": 8.5557},
+    {"name": "Olbia", "lat": 40.9234, "lng": 9.4980},
 ]
 CITY_BY_NAME = {c["name"].lower(): c for c in SUPPORTED_CITIES}
 
@@ -631,7 +674,10 @@ async def total_unread_count(user_id: str) -> int:
 
 
 @api_router.get("/cities")
-async def list_cities():
+async def list_cities(q: Optional[str] = None):
+    if q:
+        needle = q.strip().lower()
+        return [c for c in SUPPORTED_CITIES if needle in c["name"].lower()]
     return SUPPORTED_CITIES
 
 

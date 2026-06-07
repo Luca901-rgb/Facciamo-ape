@@ -4,6 +4,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/App";
 import { toast } from "sonner";
 import { Camera, Wine, Beer, Martini, GlassWater, MapPin, Sparkles, Copy } from "lucide-react";
+import CityAutocomplete from "@/components/CityAutocomplete";
 
 const DRINKS = [
   { id: "Birra", icon: <Beer className="w-5 h-5" /> },
@@ -120,7 +121,13 @@ export default function ProfileMe() {
             <input data-testid="me-age" type="number" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} className="input" />
           </Field>
           <Field label="Città">
-            <input data-testid="me-city" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Milano, Roma…" className="input" />
+            <CityAutocomplete
+              testId="me-city"
+              value={form.city}
+              onChange={(city) => setForm({ ...form, city })}
+              placeholder="Cerca città…"
+              inputClassName="input"
+            />
           </Field>
           <button onClick={detectLocation} data-testid="me-geo-btn" className="w-full flex items-center justify-center gap-2 border border-ape-border hover:border-ape-secondary rounded-xl px-4 py-3 font-bold text-sm">
             <MapPin className="w-4 h-4" /> Usa la mia posizione

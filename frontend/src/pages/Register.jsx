@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Camera, MapPin, Wine, Beer, Martini, GlassWater } from "lucide-react";
 import { DRINKS, TIME_SLOTS } from "@/lib/profile";
 import { inputCls, btnPrimaryCls } from "@/pages/AuthShell";
+import CityAutocomplete, { fetchCityNames, isKnownCity } from "@/components/CityAutocomplete";
 
 const drinkIcon = (id) => {
   const map = { Birra: Beer, Vino: Wine, Cocktail: Martini, Analcolico: GlassWater };
@@ -54,6 +55,10 @@ export default function Register() {
     if (!photoFile) return toast.error("Carica una foto profilo");
     if (!age || !city.trim() || !slot || !drink || !bio.trim()) {
       return toast.error("Compila tutti i campi del profilo");
+    }
+    const cityNames = await fetchCityNames();
+    if (!isKnownCity(city, cityNames)) {
+      return toast.error("Seleziona una città dall'elenco suggerito");
     }
     setLoading(true);
     try {
@@ -118,7 +123,14 @@ export default function Register() {
           <input data-testid="register-password-input" type="password" name="new-password" autoComplete="new-password" required minLength={8} placeholder="Password (min. 8 caratteri)" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
 
           <input data-testid="register-age-input" type="number" min="18" max="99" required placeholder="Età" value={age} onChange={(e) => setAge(e.target.value)} className={inputCls} />
-          <input data-testid="register-city-input" type="text" required placeholder="Città (es. Milano, Roma, Bologna…)" value={city} onChange={(e) => setCity(e.target.value)} className={inputCls} />
+          <CityAutocomplete
+            testId="register-city-input"
+            value={city}
+            onChange={setCity}
+            required
+            placeholder="Cerca città…"
+            inputClassName={inputCls}
+          />
 
           <button type="button" data-testid="register-geo-btn" onClick={detectLocation} className="w-full flex items-center justify-center gap-2 border border-ape-border hover:border-ape-secondary rounded-xl px-4 py-3 font-bold text-sm transition-colors">
             <MapPin className="w-4 h-4" />

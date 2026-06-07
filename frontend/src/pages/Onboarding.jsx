@@ -5,6 +5,7 @@ import { useAuth } from "@/App";
 import { toast } from "sonner";
 import { Camera, MapPin, Wine, Beer, Martini, GlassWater } from "lucide-react";
 import { DRINKS, TIME_SLOTS } from "@/lib/profile";
+import CityAutocomplete, { fetchCityNames, isKnownCity } from "@/components/CityAutocomplete";
 
 const drinkIcon = (id) => {
   const map = { Birra: Beer, Vino: Wine, Cocktail: Martini, Analcolico: GlassWater };
@@ -50,6 +51,10 @@ export default function Onboarding() {
     e.preventDefault();
     if (!photoFile && !user?.photo_path) return toast.error("Carica una foto profilo");
     if (!age || !city.trim() || !slot || !drink || !bio.trim()) return toast.error("Compila tutti i campi");
+    const cityNames = await fetchCityNames();
+    if (!isKnownCity(city, cityNames)) {
+      return toast.error("Seleziona una città dall'elenco suggerito");
+    }
     setLoading(true);
     try {
       let photo_path = user?.photo_path;
@@ -107,7 +112,13 @@ export default function Onboarding() {
 
           <div>
             <label className="text-xs uppercase tracking-[0.2em] font-bold text-ape-textMuted mb-2 block">Città</label>
-            <input data-testid="onb-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Milano, Roma, Bologna…" className="w-full bg-ape-surface border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none" />
+            <CityAutocomplete
+              testId="onb-city"
+              value={city}
+              onChange={setCity}
+              placeholder="Cerca città…"
+              inputClassName="w-full bg-ape-surface border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none text-ape-text"
+            />
           </div>
 
           <button type="button" data-testid="onb-geo-btn" onClick={detectLocation} className="w-full flex items-center justify-center gap-2 border border-ape-border hover:border-ape-secondary rounded-xl px-4 py-3 text-ape-text font-bold transition-colors">
