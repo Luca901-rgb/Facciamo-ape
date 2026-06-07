@@ -150,14 +150,25 @@ def test_conversation_flow_and_gating(userA, demo_user):
     r4 = requests.post(f"{API}/conversations/{cid}/messages", json={"text": "ciao a te"},
                        headers={"Authorization": f"Bearer {demo_tok}"})
     assert r4.status_code == 200
-    a_after = mdb.users.find_one({"user_id": userA["uid"]})["aperitivi_count"]
-    d_after = mdb.users.find_one({"user_id": target})["aperitivi_count"]
-    assert a_after == a_before + 1
-    assert d_after == d_before + 1
+    a_after_reply = mdb.users.find_one({"user_id": userA["uid"]})["aperitivi_count"]
+    d_after_reply = mdb.users.find_one({"user_id": target})["aperitivi_count"]
+    assert a_after_reply == a_before
+    assert d_after_reply == d_before
 
     # Conv is accepted now
     conv = mdb.conversations.find_one({"id": cid})
     assert conv["accepted"] is True
+
+    # Both confirm aperitivo -> count increments once
+    r4b = requests.post(f"{API}/conversations/{cid}/confirm-aperitivo", headers={"Authorization": f"Bearer {demo_tok}"})
+    assert r4b.status_code == 200
+    r4c = requests.post(f"{API}/conversations/{cid}/confirm-aperitivo", headers=userA["h"])
+    assert r4c.status_code == 200
+    assert r4c.json()["completed"] is True
+    a_after = mdb.users.find_one({"user_id": userA["uid"]})["aperitivi_count"]
+    d_after = mdb.users.find_one({"user_id": target})["aperitivi_count"]
+    assert a_after == a_before + 1
+    assert d_after == d_before + 1
 
     # Now A can send unlimited
     r5 = requests.post(f"{API}/conversations/{cid}/messages", json={"text": "third"}, headers=userA["h"])
@@ -268,9 +279,14 @@ def test_referral_completion_flow():
     r1 = requests.post(f"{API}/conversations", json={"target_user_id": xid, "text": "ciao amico"}, headers=hR)
     assert r1.status_code == 200
     cid = r1.json()["conversation_id"]
-    # X replies (auto-accept) -> triggers maybe_complete_referral
+    # X replies (auto-accept)
     r2 = requests.post(f"{API}/conversations/{cid}/messages", json={"text": "ehi!"}, headers=hX)
     assert r2.status_code == 200
+    # Both confirm aperitivo -> triggers maybe_complete_referral
+    requests.post(f"{API}/conversations/{cid}/confirm-aperitivo", headers=hX)
+    r2b = requests.post(f"{API}/conversations/{cid}/confirm-aperitivo", headers=hR)
+    assert r2b.status_code == 200
+    assert r2b.json()["completed"] is True
     # Verify both have each other in referral_completed_with
     R = mdb.users.find_one({"user_id": rid})
     X = mdb.users.find_one({"user_id": xid})

@@ -810,6 +810,35 @@ async def maybe_complete_referral(user_a_id: str, user_b_id: str):
     await db.users.update_one({"user_id": referred_id}, {"$addToSet": {"referral_completed_with": referrer_id}})
 
 
+async def confirm_aperitivo_for_user(conv: dict, user_id: str) -> dict:
+    if conv.get("is_group"):
+        raise HTTPException(status_code=400, detail="Disponibile solo nelle chat 1-a-1")
+    if not conv.get("accepted"):
+        raise HTTPException(status_code=400, detail="Accetta la chat prima di confermare l'aperitivo")
+    if user_id not in conv["participants"]:
+        raise HTTPException(status_code=403, detail="Non sei in questa conversazione")
+
+    confirmed = list(dict.fromkeys(conv.get("aperitivo_confirmed_by") or []))
+    if user_id not in confirmed:
+        confirmed.append(user_id)
+
+    participants = conv["participants"]
+    completed = len(participants) == 2 and all(p in confirmed for p in participants)
+    updates = {"aperitivo_confirmed_by": [] if completed else confirmed}
+
+    if completed:
+        for p in participants:
+            await db.users.update_one({"user_id": p}, {"$inc": {"aperitivi_count": 1}})
+        await maybe_complete_referral(participants[0], participants[1])
+
+    await db.conversations.update_one({"id": conv["id"]}, {"$set": updates})
+    return {
+        "confirmed_by": updates["aperitivo_confirmed_by"],
+        "completed": completed,
+        "my_confirmed": user_id in confirmed,
+    }
+
+
 # ===== Upload =====
 @api_router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
@@ -908,6 +937,7 @@ async def create_conversation(payload: ConversationCreate, user: dict = Depends(
             "is_group": False,
             "initiated_by": [user["user_id"]],
             "accepted": False,
+            "aperitivo_confirmed_by": [],
             "created_at": now,
             "updated_at": now
         }
@@ -974,6 +1004,7 @@ async def get_conversation(conv_id: str, user: dict = Depends(get_current_user))
                 block_reason = "awaiting_accept"
     conv["can_send"] = can_send
     conv["block_reason"] = block_reason
+    conv["aperitivo_confirmed_by"] = conv.get("aperitivo_confirmed_by") or []
     await mark_conversation_read(conv_id, user["user_id"])
     conv["unread_count"] = 0
     return conv
@@ -1007,12 +1038,6 @@ async def send_message(conv_id: str, payload: MessageCreate, user: dict = Depend
     updates = {"updated_at": now}
     if not conv.get("is_group") and not conv.get("accepted") and user["user_id"] not in conv.get("initiated_by", []):
         updates["accepted"] = True
-        # Bump aperitivi count for both
-        for p in conv["participants"]:
-            await db.users.update_one({"user_id": p}, {"$inc": {"aperitivi_count": 1}})
-        # Check referral completion
-        if len(conv["participants"]) == 2:
-            await maybe_complete_referral(conv["participants"][0], conv["participants"][1])
     await db.conversations.update_one({"id": conv_id}, {"$set": updates})
 
     await ws_manager.broadcast_to_conv(conv_id, {
@@ -1032,12 +1057,23 @@ async def accept_conversation(conv_id: str, user: dict = Depends(get_current_use
     if user["user_id"] in conv.get("initiated_by", []):
         raise HTTPException(status_code=403, detail="Non puoi accettare la tua stessa conversazione")
     await db.conversations.update_one({"id": conv_id}, {"$set": {"accepted": True}})
-    for p in conv["participants"]:
-        await db.users.update_one({"user_id": p}, {"$inc": {"aperitivi_count": 1}})
-    if len(conv["participants"]) == 2:
-        await maybe_complete_referral(conv["participants"][0], conv["participants"][1])
     await ws_manager.broadcast_to_conv(conv_id, {"type": "accepted", "conversation_id": conv_id})
     return {"ok": True}
+
+
+@api_router.post("/conversations/{conv_id}/confirm-aperitivo")
+async def confirm_aperitivo(conv_id: str, user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not conv or user["user_id"] not in conv["participants"]:
+        raise HTTPException(status_code=404, detail="Conversazione non trovata")
+    result = await confirm_aperitivo_for_user(conv, user["user_id"])
+    await ws_manager.broadcast_to_conv(conv_id, {
+        "type": "aperitivo_confirmed",
+        "conversation_id": conv_id,
+        "confirmed_by": result["confirmed_by"],
+        "completed": result["completed"],
+    })
+    return result
 
 
 @api_router.post("/conversations/{conv_id}/add_participant")

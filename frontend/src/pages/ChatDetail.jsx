@@ -5,7 +5,7 @@ import Nav from "@/components/Nav";
 import { useAuth } from "@/App";
 import { useChat } from "@/context/ChatContext";
 import { toast } from "sonner";
-import { ArrowLeft, Send, UserPlus, Users, Check, Lock, Ban } from "lucide-react";
+import { ArrowLeft, Send, UserPlus, Users, Check, Lock, Ban, Wine } from "lucide-react";
 
 export default function ChatDetail() {
   const { convId } = useParams();
@@ -15,6 +15,7 @@ export default function ChatDetail() {
   const [conv, setConv] = useState(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [confirmingAperitivo, setConfirmingAperitivo] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const bottomRef = useRef(null);
@@ -53,6 +54,11 @@ export default function ChatDetail() {
         }
       } else if (payload.type === "accepted") {
         setConv((prev) => (prev ? { ...prev, accepted: true, can_send: true } : prev));
+      } else if (payload.type === "aperitivo_confirmed") {
+        setConv((prev) => (prev ? { ...prev, aperitivo_confirmed_by: payload.confirmed_by || [] } : prev));
+        if (payload.completed) {
+          toast.success("Aperitivo registrato per entrambi 🍊");
+        }
       }
     };
     window.addEventListener("ape:chat", onChat);
@@ -97,6 +103,23 @@ export default function ChatDetail() {
     toast.success("Accettato. Ora potete parlare 🍊");
   };
 
+  const confirmAperitivo = async () => {
+    setConfirmingAperitivo(true);
+    try {
+      const { data } = await api.post(`/conversations/${convId}/confirm-aperitivo`);
+      setConv((prev) => (prev ? { ...prev, aperitivo_confirmed_by: data.confirmed_by || [] } : prev));
+      if (data.completed) {
+        toast.success("Aperitivo registrato per entrambi 🍊");
+      } else {
+        toast.success("Confermato. In attesa dell'altro 🍊");
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Conferma non riuscita");
+    } finally {
+      setConfirmingAperitivo(false);
+    }
+  };
+
   const addUser = async () => {
     if (!newUsername.trim()) return;
     try {
@@ -127,6 +150,10 @@ export default function ChatDetail() {
   const subtitle = conv.is_group ? conv.participants_info.map((p) => p.name?.split(" ")[0]).join(", ") : `@${otherMain?.username}`;
   const isInitiator = (conv.initiated_by || []).includes(user.user_id);
   const showAcceptBanner = !conv.is_group && !conv.accepted && !isInitiator;
+  const aperitivoConfirmed = conv.aperitivo_confirmed_by || [];
+  const iConfirmedAperitivo = aperitivoConfirmed.includes(user.user_id);
+  const otherConfirmedAperitivo = otherMain && aperitivoConfirmed.includes(otherMain.user_id);
+  const showAperitivoBanner = conv.accepted && !conv.is_group;
 
   return (
     <div className="min-h-screen bg-ape-bg text-ape-text flex flex-col pb-24 md:pb-12">
@@ -172,6 +199,34 @@ export default function ChatDetail() {
         <div className="px-5 py-4 bg-ape-primary/10 border-t border-ape-primary/30 flex items-center justify-between gap-3 max-w-2xl mx-auto w-full">
           <p className="text-sm">Ti ha scritto. Accetta per sbloccare la chat.</p>
           <button onClick={accept} data-testid="chat-accept-btn" className="bg-ape-primary text-ape-text font-bold rounded-full px-4 py-2 text-sm flex items-center gap-2"><Check className="w-4 h-4" /> Accetta</button>
+        </div>
+      )}
+
+      {showAperitivoBanner && (
+        <div className="px-5 py-3 bg-ape-surface/80 border-t border-ape-border max-w-2xl mx-auto w-full">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold">Aperitivo fatto?</p>
+              <p className="text-xs text-ape-textMuted truncate">
+                {iConfirmedAperitivo && otherConfirmedAperitivo
+                  ? "Conteggio aggiornato per entrambi."
+                  : iConfirmedAperitivo
+                    ? `In attesa di ${otherMain?.name?.split(" ")[0] || "l'altro"}…`
+                    : otherConfirmedAperitivo
+                      ? `${otherMain?.name?.split(" ")[0] || "L'altro"} ha confermato — tocca a te.`
+                      : "Confermate entrambi quando siete usciti."}
+              </p>
+            </div>
+            <button
+              onClick={confirmAperitivo}
+              disabled={confirmingAperitivo || iConfirmedAperitivo}
+              data-testid="chat-confirm-aperitivo-btn"
+              className="shrink-0 bg-ape-secondary hover:bg-ape-primary disabled:opacity-50 disabled:cursor-default text-ape-bg font-bold rounded-full px-4 py-2 text-sm flex items-center gap-2 transition-colors"
+            >
+              <Wine className="w-4 h-4" />
+              {iConfirmedAperitivo ? "Confermato ✓" : "Conferma"}
+            </button>
+          </div>
         </div>
       )}
 
