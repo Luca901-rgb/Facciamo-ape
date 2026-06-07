@@ -674,7 +674,7 @@ async def get_nearby(
     limit: int = 100,
     city: Optional[str] = None,
     all_cities: bool = False,
-    radius_km: float = 5.0,
+    radius_km: float = 10.0,
 ):
     query = {"user_id": {"$ne": user["user_id"]}, "age": {"$ne": None}, "is_suspended": {"$ne": True}}
     if city and not all_cities:

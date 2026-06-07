@@ -13,6 +13,7 @@ const drinkIcon = (d) => {
 
 const NEAR_ME = "__near_me__";
 const ALL_CITIES = "__all__";
+const RADIUS_KM = 10;
 
 export default function Explore() {
   const navigate = useNavigate();
@@ -37,10 +38,10 @@ export default function Explore() {
     setLoading(true);
     const params =
       selected === ALL_CITIES
-        ? { all_cities: true, radius_km: 5 }
+        ? { all_cities: true, radius_km: RADIUS_KM }
         : selected === NEAR_ME
-          ? { radius_km: 5 }
-          : { city: selected, radius_km: 5 };
+          ? { radius_km: RADIUS_KM }
+          : { city: selected, radius_km: RADIUS_KM };
     api.get("/users/nearby", { params })
       .then(({ data }) => setUsers(data))
       .catch(() => setUsers([]))
