@@ -1,12 +1,13 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/App";
+import { isSuperAdmin } from "@/lib/admin";
 import { toast } from "sonner";
 import { Wine, Beer, Martini, GlassWater, MapPin, Sparkles } from "lucide-react";
 
 export default function Landing() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [city, setCity] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -49,6 +50,10 @@ export default function Landing() {
     }
   };
 
+  if (!loading && user && isSuperAdmin(user)) {
+    return <Navigate to="/admin" replace />;
+  }
+
   return (
     <div className="min-h-screen bg-ape-bg text-ape-text overflow-x-hidden">
       {/* Top bar */}
@@ -61,9 +66,9 @@ export default function Landing() {
             Apri l'app →
           </a>
         ) : (
-          <button onClick={scrollToLogin} data-testid="nav-login-btn" className="text-sm font-bold text-ape-text border border-ape-border hover:border-ape-secondary rounded-full px-5 py-2 transition-colors">
+          <Link to="/login" data-testid="nav-login-btn" className="text-sm font-bold text-ape-text border border-ape-border hover:border-ape-secondary rounded-full px-5 py-2 transition-colors">
             Entra
-          </button>
+          </Link>
         )}
       </header>
 

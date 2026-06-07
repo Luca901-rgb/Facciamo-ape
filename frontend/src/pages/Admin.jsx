@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, fileUrl } from "@/lib/api";
-import Nav from "@/components/Nav";
+import AdminShell from "@/components/AdminShell";
 import { useAuth } from "@/App";
 import { isSuperAdmin } from "@/lib/admin";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ export default function Admin() {
     } catch (e) {
       if (e.response?.status === 403) {
         toast.error("Accesso riservato");
-        navigate("/explore");
+        navigate("/login", { replace: true });
       }
     } finally {
       setLoading(false);
@@ -49,7 +49,7 @@ export default function Admin() {
     } catch (e) {
       if (e.response?.status === 403) {
         toast.error("Accesso riservato");
-        navigate("/explore");
+        navigate("/login", { replace: true });
       }
     } finally {
       setLoading(false);
@@ -99,16 +99,14 @@ export default function Admin() {
   if (!isSuperAdmin(user)) return null;
 
   return (
-    <div className="min-h-screen bg-ape-bg text-ape-text pb-24 md:pb-12">
-      <Nav />
-      <main className="max-w-5xl mx-auto px-5 sm:px-8 pt-6">
-        <div className="flex items-center gap-3 mb-8">
-          <Shield className="w-7 h-7 text-ape-primary" />
-          <div>
-            <h1 className="font-display font-black text-4xl tracking-tighter">Admin</h1>
-            <p className="text-sm text-ape-textMuted">Accesso riservato · {user.email}</p>
-          </div>
+    <AdminShell>
+      <div className="flex items-center gap-3 mb-8">
+        <Shield className="w-7 h-7 text-ape-primary" />
+        <div>
+          <h1 className="font-display font-black text-4xl tracking-tighter">Iscritti e moderazione</h1>
+          <p className="text-sm text-ape-textMuted">Gestione piattaforma</p>
         </div>
+      </div>
 
         <div className="flex gap-2 mb-6">
           <button
@@ -251,7 +249,6 @@ export default function Admin() {
             )}
           </>
         )}
-      </main>
-    </div>
+    </AdminShell>
   );
 }

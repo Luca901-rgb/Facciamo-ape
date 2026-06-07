@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Compass, User, LogOut, Shield, Bell } from "lucide-react";
+import { Compass, User, LogOut, Bell } from "lucide-react";
 import { useAuth } from "@/App";
-import { isSuperAdmin } from "@/lib/admin";
 import { useChat } from "@/context/ChatContext";
 
 function ChatNavLink({ to, testId, className, children }) {
@@ -44,11 +43,6 @@ export default function Nav() {
         <NavLink to="/me" data-testid="nav-me" className={linkCls}>
           <User className="w-5 h-5" /> Tu
         </NavLink>
-        {isSuperAdmin(user) && (
-          <NavLink to="/admin" data-testid="nav-admin" className={linkCls}>
-            <Shield className="w-5 h-5" /> Admin
-          </NavLink>
-        )}
       </nav>
 
       {/* Desktop top nav */}
@@ -60,7 +54,6 @@ export default function Nav() {
           <NavLink to="/explore" data-testid="nav-explore-d" className={linkCls}><Compass className="w-5 h-5" /><span>Esplora</span></NavLink>
           <ChatNavLink to="/chat" testId="nav-chat-d" className={linkCls}><Bell className="w-5 h-5" /><span>Chat</span></ChatNavLink>
           <NavLink to="/me" data-testid="nav-me-d" className={linkCls}><User className="w-5 h-5" /><span>Profilo</span></NavLink>
-          {isSuperAdmin(user) && <NavLink to="/admin" data-testid="nav-admin-d" className={linkCls}><Shield className="w-5 h-5" /><span>Admin</span></NavLink>}
           <button onClick={handleLogout} data-testid="nav-logout" className="text-ape-textMuted hover:text-ape-primary"><LogOut className="w-5 h-5" /></button>
         </div>
       </nav>

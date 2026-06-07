@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { isProfileComplete } from "@/lib/profile";
+import { getPostLoginPath } from "@/lib/admin";
 import { useAuth } from "@/App";
 import { toast } from "sonner";
 import AuthShell, { inputCls, btnPrimaryCls } from "@/pages/AuthShell";
@@ -19,11 +20,7 @@ export default function Login() {
     try {
       const res = await api.post("/auth/login", { email, password });
       const user = completeAuth(res.data, res);
-      if (!isProfileComplete(user)) {
-        navigate("/onboarding", { replace: true });
-      } else {
-        navigate("/explore", { replace: true });
-      }
+      navigate(getPostLoginPath(user) || (isProfileComplete(user) ? "/explore" : "/onboarding"), { replace: true });
     } catch (err) {
       toast.error(err?.response?.data?.detail || err?.message || "Accesso non riuscito");
     } finally {

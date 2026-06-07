@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/App";
-import { isSuperAdmin } from "@/lib/admin";
 import { toast } from "sonner";
 import { Camera, MapPin, Wine, Beer, Martini, GlassWater } from "lucide-react";
 import { DRINKS, TIME_SLOTS } from "@/lib/profile";
@@ -93,18 +92,6 @@ export default function Onboarding() {
         <p className="text-xs uppercase tracking-[0.3em] text-ape-secondary font-bold mb-4">Ultimo passo</p>
         <h1 className="font-display font-black text-4xl sm:text-5xl tracking-tighter mb-3">Completa il profilo</h1>
         <p className="text-ape-textMuted mb-10">Foto e qualche dettaglio, poi entri.</p>
-
-        {isSuperAdmin(user) && (
-          <p className="mb-8">
-            <button
-              type="button"
-              onClick={() => navigate("/admin")}
-              className="text-ape-secondary hover:text-ape-primary font-bold text-sm underline underline-offset-4"
-            >
-              Vai al pannello Admin →
-            </button>
-          </p>
-        )}
 
         <form onSubmit={submit} className="space-y-6">
           <div className="flex flex-col items-center">

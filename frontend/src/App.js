@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-route
 import { Toaster } from "@/components/ui/sonner";
 import { api, applyAuthResponse, getSessionToken, setSessionToken } from "@/lib/api";
 import { isProfileComplete } from "@/lib/profile";
-import { isSuperAdmin } from "@/lib/admin";
+import { isSuperAdmin, getPostLoginPath } from "@/lib/admin";
 import { ChatProvider } from "@/context/ChatContext";
 
 import Landing from "@/pages/Landing";
@@ -91,9 +91,28 @@ function Protected({ children, needsOnboarding = true }) {
       </div>
     );
   }
-  if (!user) return <Navigate to="/" replace />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (isSuperAdmin(user) && location.pathname !== "/admin") {
+    return <Navigate to="/admin" replace />;
+  }
   if (needsOnboarding && !isProfileComplete(user) && !isSuperAdmin(user)) {
     if (location.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
+  }
+  return children;
+}
+
+function GuestOnly({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-ape-bg flex items-center justify-center">
+        <div className="text-ape-textMuted">Caricamento…</div>
+      </div>
+    );
+  }
+  if (user) {
+    const dest = getPostLoginPath(user) || (isProfileComplete(user) ? "/explore" : "/onboarding");
+    return <Navigate to={dest} replace />;
   }
   return children;
 }
@@ -106,7 +125,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
+      <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/auth/reset-password" element={<ResetPassword />} />
