@@ -55,7 +55,7 @@ export default function Explore() {
         <div className="mb-6">
           <p className="text-xs uppercase tracking-[0.3em] text-ape-secondary font-bold mb-3">Stasera in giro</p>
           <h1 className="font-display font-black text-4xl sm:text-5xl tracking-tighter leading-none">
-            Chi c'è <span className="text-ape-primary italic">a 5km</span> da te?
+            Chi c'è <span className="text-ape-primary italic">vicino a te</span>?
           </h1>
         </div>
 
@@ -93,7 +93,7 @@ export default function Explore() {
           <div className="text-ape-textMuted">Cerco compagnia…</div>
         ) : users.length === 0 ? (
           <div className="bg-ape-surface border border-ape-border rounded-2xl p-8 text-center">
-            <p className="text-ape-textMuted mb-2">Nessuno qui intorno entro 5km{selected !== NEAR_ME && selected !== ALL_CITIES ? ` a ${selected}` : ""}.</p>
+            <p className="text-ape-textMuted mb-2">Nessuno vicino a te{selected !== NEAR_ME && selected !== ALL_CITIES ? ` a ${selected}` : ""}.</p>
             <p className="text-sm text-ape-textMuted/70">Prova un'altra città, o invita un amico.</p>
           </div>
         ) : (
