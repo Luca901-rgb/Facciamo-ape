@@ -39,6 +39,7 @@ gridfs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="uploads")
 
 APP_NAME = os.environ.get("APP_NAME", "facciamoape")
 ADMIN_EMAILS = set(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
+SUPER_ADMIN_EMAIL = os.environ.get("SUPER_ADMIN_EMAIL", "lcammarota24@gmail.com").strip().lower()
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 MAGIC_LINK_TTL_MINUTES = int(os.environ.get("MAGIC_LINK_TTL_MINUTES", "15"))
 PASSWORD_RESET_TTL_MINUTES = int(os.environ.get("PASSWORD_RESET_TTL_MINUTES", "60"))
@@ -225,7 +226,7 @@ async def create_password_user(
     while await db.users.find_one({"username": username}):
         username = f"{base_username}{suffix}"
         suffix += 1
-    is_admin = email in ADMIN_EMAILS
+    is_admin = email.lower() in ADMIN_EMAILS or email.lower() == SUPER_ADMIN_EMAIL
     referred_by = await _resolve_referrer(referrer_username, user_id)
     await db.users.insert_one({
         "user_id": user_id,
@@ -1126,9 +1127,48 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
 
 # ===== Admin =====
 async def get_admin(user: dict = Depends(get_current_user)) -> dict:
-    if not user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Solo admin")
+    if user.get("email", "").lower() != SUPER_ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Accesso riservato")
     return user
+
+
+async def delete_user_account(user_id: str):
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    if user.get("email", "").lower() == SUPER_ADMIN_EMAIL:
+        raise HTTPException(status_code=400, detail="Non puoi eliminare l'admin principale")
+    email = user.get("email")
+    await db.user_sessions.delete_many({"user_id": user_id})
+    convs = await db.conversations.find({"participants": user_id}, {"_id": 0, "id": 1}).to_list(500)
+    conv_ids = [c["id"] for c in convs]
+    if conv_ids:
+        await db.messages.delete_many({"conversation_id": {"$in": conv_ids}})
+    await db.conversations.delete_many({"participants": user_id})
+    await db.reports.delete_many({"$or": [{"reporter_id": user_id}, {"reported_id": user_id}]})
+    if email:
+        await db.password_reset_tokens.delete_many({"email": email})
+        await db.magic_links.delete_many({"email": email})
+    await db.users.update_many({"referred_by": user_id}, {"$set": {"referred_by": None}})
+    await db.users.delete_one({"user_id": user_id})
+
+
+@api_router.get("/admin/users")
+async def admin_list_users(admin: dict = Depends(get_admin)):
+    cursor = db.users.find(
+        {"is_demo": {"$ne": True}},
+        {"_id": 0, "password_hash": 0},
+    ).sort("created_at", -1)
+    users = await cursor.to_list(2000)
+    return {"total": len(users), "users": users}
+
+
+@api_router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, admin: dict = Depends(get_admin)):
+    if user_id == admin["user_id"]:
+        raise HTTPException(status_code=400, detail="Non puoi eliminare il tuo account da qui")
+    await delete_user_account(user_id)
+    return {"ok": True}
 
 
 @api_router.get("/admin/reports")
@@ -1189,8 +1229,8 @@ async def admin_suspend(user_id: str, admin: dict = Depends(get_admin)):
     target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     if not target:
         raise HTTPException(status_code=404, detail="Utente non trovato")
-    if target.get("is_admin"):
-        raise HTTPException(status_code=400, detail="Non puoi sospendere un admin")
+    if target.get("email", "").lower() == SUPER_ADMIN_EMAIL:
+        raise HTTPException(status_code=400, detail="Non puoi sospendere l'admin principale")
     await db.users.update_one(
         {"user_id": user_id},
         {"$set": {"is_suspended": True, "suspended_at": datetime.now(timezone.utc).isoformat()}}
@@ -1263,6 +1303,13 @@ async def startup():
             logger.info(f"Removed {deleted.deleted_count} demo users")
     except Exception as e:
         logger.error(f"Demo cleanup failed: {e}")
+    try:
+        await db.users.update_one(
+            {"email": {"$regex": f"^{SUPER_ADMIN_EMAIL}$", "$options": "i"}},
+            {"$set": {"is_admin": True}},
+        )
+    except Exception as e:
+        logger.error(f"Super admin sync failed: {e}")
     # Performance indexes
     try:
         await db.reports.create_index([("reported_id", 1), ("reporter_id", 1), ("reason", 1)])
