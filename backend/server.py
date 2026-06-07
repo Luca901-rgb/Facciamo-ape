@@ -603,7 +603,31 @@ async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_curren
             raise HTTPException(status_code=400, detail="Username già preso")
         updates["username"] = u
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
-    return await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
+    return public_user(await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0}))
+
+
+async def mark_conversation_read(conv_id: str, user_id: str):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.conversations.update_one(
+        {"id": conv_id},
+        {"$set": {f"read_at.{user_id}": now}},
+    )
+
+
+async def unread_count_for_conv(conv: dict, user_id: str) -> int:
+    read_at = (conv.get("read_at") or {}).get(user_id)
+    query = {"conversation_id": conv["id"], "sender_id": {"$ne": user_id}}
+    if read_at:
+        query["created_at"] = {"$gt": read_at}
+    return await db.messages.count_documents(query)
+
+
+async def total_unread_count(user_id: str) -> int:
+    convs = await db.conversations.find({"participants": user_id}, {"_id": 0}).to_list(200)
+    total = 0
+    for conv in convs:
+        total += await unread_count_for_conv(conv, user_id)
+    return total
 
 
 @api_router.get("/cities")
@@ -616,10 +640,11 @@ async def get_nearby(
     user: dict = Depends(get_current_user),
     limit: int = 100,
     city: Optional[str] = None,
+    all_cities: bool = False,
     radius_km: float = 5.0,
 ):
     query = {"user_id": {"$ne": user["user_id"]}, "age": {"$ne": None}, "is_suspended": {"$ne": True}}
-    if city:
+    if city and not all_cities:
         query["city"] = {"$regex": f"^{city}$", "$options": "i"}
 
     # Determine the reference point for distance: user GPS, else city center if specified, else None
@@ -774,6 +799,11 @@ async def download_file(path: str):
 
 
 # ===== Conversations =====
+@api_router.get("/conversations/unread-count")
+async def conversations_unread_count(user: dict = Depends(get_current_user)):
+    return {"count": await total_unread_count(user["user_id"])}
+
+
 @api_router.get("/conversations")
 async def list_conversations(user: dict = Depends(get_current_user)):
     convs = await db.conversations.find({"participants": user["user_id"]}, {"_id": 0}).sort("updated_at", -1).to_list(200)
@@ -804,6 +834,7 @@ async def list_conversations(user: dict = Depends(get_current_user)):
         other_ids = [p for p in c["participants"] if p != user["user_id"]]
         c["other_participants"] = [users_map[uid] for uid in other_ids if uid in users_map]
         c["last_message"] = messages_map.get(c["id"])
+        c["unread_count"] = await unread_count_for_conv(c, user["user_id"])
     return convs
 
 
@@ -869,6 +900,15 @@ async def create_conversation(payload: ConversationCreate, user: dict = Depends(
     return {"conversation_id": conv["id"], "message": msg}
 
 
+@api_router.post("/conversations/{conv_id}/read")
+async def mark_conversation_read_endpoint(conv_id: str, user: dict = Depends(get_current_user)):
+    conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not conv or user["user_id"] not in conv["participants"]:
+        raise HTTPException(status_code=404, detail="Conversazione non trovata")
+    await mark_conversation_read(conv_id, user["user_id"])
+    return {"ok": True}
+
+
 @api_router.get("/conversations/{conv_id}")
 async def get_conversation(conv_id: str, user: dict = Depends(get_current_user)):
     conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
@@ -901,6 +941,8 @@ async def get_conversation(conv_id: str, user: dict = Depends(get_current_user))
                 block_reason = "awaiting_accept"
     conv["can_send"] = can_send
     conv["block_reason"] = block_reason
+    await mark_conversation_read(conv_id, user["user_id"])
+    conv["unread_count"] = 0
     return conv
 
 

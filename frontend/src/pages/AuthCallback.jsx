@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { isProfileComplete } from "@/lib/profile";
 import { useAuth } from "@/App";
 
 export default function AuthCallback() {
@@ -22,7 +23,7 @@ export default function AuthCallback() {
         sessionStorage.removeItem("ref");
         const user = completeAuth(res.data, res);
         window.history.replaceState(null, "", window.location.pathname);
-        if (!user.age || !user.city) {
+        if (!isProfileComplete(user)) {
           navigate("/onboarding", { replace: true });
         } else {
           navigate("/explore", { replace: true });

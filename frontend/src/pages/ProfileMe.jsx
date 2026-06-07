@@ -18,7 +18,6 @@ export default function ProfileMe() {
   const [form, setForm] = useState({
     age: user?.age || "",
     city: user?.city || "",
-    zone: user?.zone || "",
     time_slot: user?.time_slot || "",
     drink: user?.drink || "",
     bio: user?.bio || "",
@@ -28,12 +27,10 @@ export default function ProfileMe() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [referral, setReferral] = useState(null);
-  const [cities, setCities] = useState([]);
   const fileRef = useRef();
 
   useEffect(() => {
     api.get("/users/me/referral").then(({ data }) => setReferral(data)).catch(() => {});
-    api.get("/cities").then(({ data }) => setCities(data)).catch(() => {});
   }, []);
 
   if (!user) return null;
@@ -122,19 +119,13 @@ export default function ProfileMe() {
           <Field label="Età">
             <input data-testid="me-age" type="number" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} className="input" />
           </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Città">
-              <select data-testid="me-city" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="input">
-                <option value="">Scegli…</option>
-                {cities.map((c) => (
-                  <option key={c.name} value={c.name}>{c.name}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Zona">
-              <input data-testid="me-zone" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value })} className="input" />
-            </Field>
-          </div>
+          <Field label="Città">
+            <input data-testid="me-city" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Milano, Roma…" className="input" />
+          </Field>
+          <button onClick={detectLocation} data-testid="me-geo-btn" className="w-full flex items-center justify-center gap-2 border border-ape-border hover:border-ape-secondary rounded-xl px-4 py-3 font-bold text-sm">
+            <MapPin className="w-4 h-4" /> Usa la mia posizione
+          </button>
+
           <Field label="Fascia oraria">
             <div className="flex flex-wrap gap-2">
               {SLOTS.map((s) => (
@@ -154,10 +145,6 @@ export default function ProfileMe() {
           <Field label="Bio">
             <textarea data-testid="me-bio" rows={3} maxLength={140} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} className="input resize-none" />
           </Field>
-
-          <button onClick={detectLocation} data-testid="me-geo-btn" className="w-full flex items-center justify-center gap-2 border border-ape-border hover:border-ape-secondary rounded-xl px-4 py-3 font-bold text-sm">
-            <MapPin className="w-4 h-4" /> Aggiorna posizione
-          </button>
 
           {referral && (
             <div className="bg-ape-surface border border-ape-border rounded-2xl p-5">

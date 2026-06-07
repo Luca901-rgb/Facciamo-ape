@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { api, fileUrl, wsUrl } from "@/lib/api";
+import { api, fileUrl } from "@/lib/api";
 import Nav from "@/components/Nav";
 import { useAuth } from "@/App";
+import { useChat } from "@/context/ChatContext";
 import { toast } from "sonner";
 import { ArrowLeft, Send, UserPlus, Users, Check, Lock, Ban } from "lucide-react";
 
@@ -10,62 +11,80 @@ export default function ChatDetail() {
   const { convId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { refreshUnread } = useChat();
   const [conv, setConv] = useState(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [newUsername, setNewUsername] = useState("");
-  const wsRef = useRef(null);
   const bottomRef = useRef(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await api.get(`/conversations/${convId}`);
     setConv(data);
-  };
+    refreshUnread();
+  }, [convId, refreshUnread]);
 
   useEffect(() => {
-    load();
-  }, [convId]);
+    load().catch(() => navigate("/chat"));
+  }, [load, navigate]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages?.length]);
 
-  // WebSocket realtime
   useEffect(() => {
-    if (!user) return;
-    let ws;
-    let alive = true;
-    (async () => {
-      try {
-        const { data } = await api.get("/auth/ws-token");
-        if (!data?.ws_token || !alive) return;
-        ws = new WebSocket(wsUrl(data.ws_token));
-        wsRef.current = ws;
-        ws.onmessage = (ev) => {
-          try {
-            const payload = JSON.parse(ev.data);
-            if (payload.conversation_id === convId) {
-              load();
-            }
-          } catch {}
-        };
-      } catch {}
-    })();
-    return () => {
-      alive = false;
-      try { ws && ws.close(); } catch {}
+    const onChat = (ev) => {
+      const payload = ev.detail;
+      if (payload.conversation_id !== convId) return;
+      if (payload.type === "message") {
+        setConv((prev) => {
+          if (!prev) return prev;
+          if (prev.messages?.some((m) => m.id === payload.message.id)) return prev;
+          return {
+            ...prev,
+            messages: [...(prev.messages || []), payload.message],
+            accepted: payload.accepted ?? prev.accepted,
+            can_send: payload.message.sender_id === user.user_id ? prev.can_send : true,
+          };
+        });
+        if (payload.message.sender_id !== user.user_id) {
+          api.post(`/conversations/${convId}/read`).catch(() => {});
+        }
+      } else if (payload.type === "accepted") {
+        setConv((prev) => (prev ? { ...prev, accepted: true, can_send: true } : prev));
+      }
     };
-  }, [user, convId]);
+    window.addEventListener("ape:chat", onChat);
+    return () => window.removeEventListener("ape:chat", onChat);
+  }, [convId, user?.user_id]);
 
   const send = async () => {
-    if (!text.trim()) return;
+    const body = text.trim();
+    if (!body) return;
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      conversation_id: convId,
+      sender_id: user.user_id,
+      text: body,
+      created_at: new Date().toISOString(),
+    };
+    setConv((prev) => ({ ...prev, messages: [...(prev.messages || []), optimistic] }));
+    setText("");
     setSending(true);
     try {
-      await api.post(`/conversations/${convId}/messages`, { text });
-      setText("");
-      await load();
+      const { data } = await api.post(`/conversations/${convId}/messages`, { text: body });
+      setConv((prev) => ({
+        ...prev,
+        messages: prev.messages.map((m) => (m.id === tempId ? data : m)),
+      }));
     } catch (e) {
+      setConv((prev) => ({
+        ...prev,
+        messages: prev.messages.filter((m) => m.id !== tempId),
+      }));
+      setText(body);
       toast.error(e.response?.data?.detail || "Non puoi inviare");
     } finally {
       setSending(false);
@@ -74,7 +93,7 @@ export default function ChatDetail() {
 
   const accept = async () => {
     await api.post(`/conversations/${convId}/accept`);
-    await load();
+    setConv((prev) => (prev ? { ...prev, accepted: true, can_send: true } : prev));
     toast.success("Accettato. Ora potete parlare 🍊");
   };
 
@@ -151,7 +170,7 @@ export default function ChatDetail() {
 
       {showAcceptBanner && (
         <div className="px-5 py-4 bg-ape-primary/10 border-t border-ape-primary/30 flex items-center justify-between gap-3 max-w-2xl mx-auto w-full">
-          <p className="text-sm">Ti ha scritto. Accetta per sbloccare la chat (oppure rispondi e si sblocca da sola).</p>
+          <p className="text-sm">Ti ha scritto. Accetta per sbloccare la chat.</p>
           <button onClick={accept} data-testid="chat-accept-btn" className="bg-ape-primary text-ape-text font-bold rounded-full px-4 py-2 text-sm flex items-center gap-2"><Check className="w-4 h-4" /> Accetta</button>
         </div>
       )}
@@ -163,7 +182,7 @@ export default function ChatDetail() {
               data-testid="chat-input"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && send()}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
               placeholder="Scrivi un messaggio…"
               className="flex-1 bg-ape-surface border border-ape-border focus:border-ape-primary rounded-full px-5 py-3 outline-none"
             />
@@ -174,7 +193,7 @@ export default function ChatDetail() {
         ) : (
           <div className="flex items-center gap-3 text-sm text-ape-textMuted px-3 py-3 bg-ape-surface border border-ape-border rounded-2xl">
             <Lock className="w-4 h-4 text-ape-secondary" />
-            <span>{conv.block_reason === "blocked" ? "Non puoi più scrivere qui." : "In attesa che ti accetti. Quando lo fa, sblocchi la chat e potrai scrivere quanto vuoi."}</span>
+            <span>{conv.block_reason === "blocked" ? "Non puoi più scrivere qui." : "In attesa che ti accetti."}</span>
           </div>
         )}
       </footer>
@@ -183,7 +202,7 @@ export default function ChatDetail() {
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-5" onClick={() => setShowAdd(false)}>
           <div className="bg-ape-surface border border-ape-border rounded-3xl p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display font-bold text-xl mb-2">Aggiungi alla chat</h3>
-            <p className="text-sm text-ape-textMuted mb-4">Inserisci lo username della persona da invitare. Diventerà chat di gruppo.</p>
+            <p className="text-sm text-ape-textMuted mb-4">Inserisci lo username della persona da invitare.</p>
             <input data-testid="chat-add-username-input" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="@username" className="w-full bg-ape-bg border border-ape-border focus:border-ape-primary rounded-xl px-4 py-3 outline-none mb-4" />
             <div className="flex gap-2">
               <button onClick={() => setShowAdd(false)} className="flex-1 border border-ape-border rounded-full py-3 font-bold">Annulla</button>

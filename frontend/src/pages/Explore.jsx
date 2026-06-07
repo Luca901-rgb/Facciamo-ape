@@ -12,6 +12,7 @@ const drinkIcon = (d) => {
 };
 
 const NEAR_ME = "__near_me__";
+const ALL_CITIES = "__all__";
 
 export default function Explore() {
   const navigate = useNavigate();
@@ -34,7 +35,12 @@ export default function Explore() {
 
   useEffect(() => {
     setLoading(true);
-    const params = selected === NEAR_ME ? { radius_km: 5 } : { city: selected, radius_km: 5 };
+    const params =
+      selected === ALL_CITIES
+        ? { all_cities: true, radius_km: 5 }
+        : selected === NEAR_ME
+          ? { radius_km: 5 }
+          : { city: selected, radius_km: 5 };
     api.get("/users/nearby", { params })
       .then(({ data }) => setUsers(data))
       .catch(() => setUsers([]))
@@ -62,6 +68,13 @@ export default function Explore() {
             >
               <Navigation className="w-3.5 h-3.5" /> Vicino a me
             </button>
+            <button
+              data-testid="city-chip-all"
+              onClick={() => setSelected(ALL_CITIES)}
+              className={`shrink-0 px-4 py-2 rounded-full border font-bold text-sm transition-colors ${selected === ALL_CITIES ? "bg-ape-primary border-ape-primary text-ape-text" : "bg-ape-surface border-ape-border text-ape-textMuted hover:border-ape-secondary"}`}
+            >
+              Tutte le città
+            </button>
             {cities.map((c) => (
               <button
                 key={c.name}
@@ -79,7 +92,7 @@ export default function Explore() {
           <div className="text-ape-textMuted">Cerco compagnia…</div>
         ) : users.length === 0 ? (
           <div className="bg-ape-surface border border-ape-border rounded-2xl p-8 text-center">
-            <p className="text-ape-textMuted mb-2">Nessuno qui intorno entro 5km{selected !== NEAR_ME ? ` a ${selected}` : ""}.</p>
+            <p className="text-ape-textMuted mb-2">Nessuno qui intorno entro 5km{selected !== NEAR_ME && selected !== ALL_CITIES ? ` a ${selected}` : ""}.</p>
             <p className="text-sm text-ape-textMuted/70">Prova un'altra città, o invita un amico.</p>
           </div>
         ) : (
@@ -108,8 +121,7 @@ export default function Explore() {
                     </div>
                     <div className="flex items-center gap-2 text-sm text-ape-textMuted">
                       <MapPin className="w-3.5 h-3.5 text-ape-primary" />
-                      <span>{u.zone}, {u.city}</span>
-                      {u.distance_km != null && <span className="text-ape-secondary">· {u.distance_km}km</span>}
+                      <span>{u.city}{u.distance_km != null ? ` · ${u.distance_km}km` : ""}</span>
                     </div>
                   </div>
                 </div>

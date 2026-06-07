@@ -3,6 +3,8 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { api, applyAuthResponse, getSessionToken, setSessionToken } from "@/lib/api";
+import { isProfileComplete } from "@/lib/profile";
+import { ChatProvider } from "@/context/ChatContext";
 
 import Landing from "@/pages/Landing";
 import AuthCallback from "@/pages/AuthCallback";
@@ -89,7 +91,7 @@ function Protected({ children, needsOnboarding = true }) {
     );
   }
   if (!user) return <Navigate to="/" replace />;
-  if (needsOnboarding && (!user.age || !user.city || !user.zone || !user.time_slot || !user.drink)) {
+  if (needsOnboarding && !isProfileComplete(user)) {
     if (location.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
   }
   return children;
@@ -124,8 +126,10 @@ function App() {
     <div className="App font-body">
       <BrowserRouter>
         <AuthProvider>
-          <AppRouter />
-          <Toaster theme="dark" position="top-center" />
+          <ChatProvider>
+            <AppRouter />
+            <Toaster theme="dark" position="top-center" />
+          </ChatProvider>
         </AuthProvider>
       </BrowserRouter>
     </div>

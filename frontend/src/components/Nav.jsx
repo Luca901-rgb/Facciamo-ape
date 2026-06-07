@@ -1,6 +1,23 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Compass, MessageCircle, User, LogOut, Shield } from "lucide-react";
+import { Compass, User, LogOut, Shield, Bell } from "lucide-react";
 import { useAuth } from "@/App";
+import { useChat } from "@/context/ChatContext";
+
+function ChatNavLink({ to, testId, className, children }) {
+  const { unreadCount } = useChat();
+  return (
+    <NavLink to={to} data-testid={testId} className={className}>
+      <span className="relative inline-flex">
+        {children}
+        {unreadCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-ape-primary text-ape-text text-[10px] font-black flex items-center justify-center animate-pulse">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </span>
+    </NavLink>
+  );
+}
 
 export default function Nav() {
   const navigate = useNavigate();
@@ -20,9 +37,9 @@ export default function Nav() {
         <NavLink to="/explore" data-testid="nav-explore" className={linkCls}>
           <Compass className="w-5 h-5" /> Esplora
         </NavLink>
-        <NavLink to="/chat" data-testid="nav-chat" className={linkCls}>
-          <MessageCircle className="w-5 h-5" /> Chat
-        </NavLink>
+        <ChatNavLink to="/chat" testId="nav-chat" className={linkCls}>
+          <Bell className="w-5 h-5" /> Chat
+        </ChatNavLink>
         <NavLink to="/me" data-testid="nav-me" className={linkCls}>
           <User className="w-5 h-5" /> Tu
         </NavLink>
@@ -40,7 +57,7 @@ export default function Nav() {
         </NavLink>
         <div className="flex items-center gap-8">
           <NavLink to="/explore" data-testid="nav-explore-d" className={linkCls}><Compass className="w-5 h-5" /><span>Esplora</span></NavLink>
-          <NavLink to="/chat" data-testid="nav-chat-d" className={linkCls}><MessageCircle className="w-5 h-5" /><span>Chat</span></NavLink>
+          <ChatNavLink to="/chat" testId="nav-chat-d" className={linkCls}><Bell className="w-5 h-5" /><span>Chat</span></ChatNavLink>
           <NavLink to="/me" data-testid="nav-me-d" className={linkCls}><User className="w-5 h-5" /><span>Profilo</span></NavLink>
           {user?.is_admin && <NavLink to="/admin" data-testid="nav-admin-d" className={linkCls}><Shield className="w-5 h-5" /><span>Mod</span></NavLink>}
           <button onClick={handleLogout} data-testid="nav-logout" className="text-ape-textMuted hover:text-ape-primary"><LogOut className="w-5 h-5" /></button>

@@ -83,7 +83,7 @@ export default function Profile() {
               </div>
               <div className="flex items-center gap-2 mt-2 text-ape-textMuted">
                 <MapPin className="w-4 h-4 text-ape-primary" />
-                <span>{user.zone}, {user.city}</span>
+                <span>{user.city}</span>
                 {user.distance_km != null && <span className="text-ape-secondary font-bold">· {user.distance_km}km</span>}
               </div>
             </div>
