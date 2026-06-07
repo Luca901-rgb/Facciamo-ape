@@ -6,12 +6,13 @@ from typing import Optional, Tuple
 
 import requests
 
+from config import frontend_url
+
 logger = logging.getLogger(__name__)
 
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "lcammarota24@gmail.com")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Facciamo Ape")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
@@ -94,7 +95,7 @@ def send_email(to: str, subject: str, html: str, text: str = "") -> bool:
 
 
 def send_welcome_email(to: str, name: str) -> bool:
-    explore_url = f"{FRONTEND_URL}/explore"
+    explore_url = f"{frontend_url()}/explore"
     html = _email_layout(
         "Benvenuto!",
         f"<p>Ciao <strong>{name}</strong>,</p>"

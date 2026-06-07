@@ -26,6 +26,7 @@ from email_service import (
     send_password_reset_email,
     send_welcome_email,
 )
+from config import frontend_url
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -39,7 +40,6 @@ gridfs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="uploads")
 APP_NAME = os.environ.get("APP_NAME", "facciamoape")
 ADMIN_EMAILS = set(e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip())
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 MAGIC_LINK_TTL_MINUTES = int(os.environ.get("MAGIC_LINK_TTL_MINUTES", "15"))
 PASSWORD_RESET_TTL_MINUTES = int(os.environ.get("PASSWORD_RESET_TTL_MINUTES", "60"))
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -453,7 +453,7 @@ async def auth_forgot_password(body: ForgotPasswordRequest):
             "used": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        link = f"{FRONTEND_URL}/auth/reset-password?token={urllib.parse.quote(token)}"
+        link = f"{frontend_url()}/auth/reset-password?token={urllib.parse.quote(token)}"
         if not send_password_reset_email(email, link, PASSWORD_RESET_TTL_MINUTES):
             logger.warning("Password reset email not sent to %s", email)
     return {"ok": True, "message": "Se l'email è registrata, riceverai un link per reimpostare la password."}
@@ -493,10 +493,10 @@ async def request_magic_link(body: MagicLinkRequest):
         "used": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
-    link = f"{FRONTEND_URL}/auth/verify?token={urllib.parse.quote(token)}"
+    link = f"{frontend_url()}/auth/verify?token={urllib.parse.quote(token)}"
     sent = send_magic_link_email(email, link, MAGIC_LINK_TTL_MINUTES)
     if not sent:
-        if "localhost" in FRONTEND_URL or os.environ.get("MAGIC_LINK_DEV") == "true":
+        if "localhost" in frontend_url() or os.environ.get("MAGIC_LINK_DEV") == "true":
             logger.info("DEV magic link for %s: %s", email, link)
             return {
                 "ok": True,
