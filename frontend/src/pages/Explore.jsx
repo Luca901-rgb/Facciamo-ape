@@ -24,15 +24,8 @@ export default function Explore() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/cities").then(({ data }) => {
-      setCities(data);
-      // Default selection: user's own city if supported, else "near me"
-      if (user?.city) {
-        const match = data.find((c) => c.name.toLowerCase() === user.city.toLowerCase());
-        if (match) setSelected(match.name);
-      }
-    });
-  }, [user]);
+    api.get("/cities").then(({ data }) => setCities(data));
+  }, []);
 
   useEffect(() => {
     setLoading(true);
