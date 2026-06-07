@@ -328,11 +328,6 @@ class ProfileUpdate(BaseModel):
     lng: Optional[float] = None
 
 
-class WaitlistEntry(BaseModel):
-    email: str
-    city: str
-
-
 class MagicLinkRequest(BaseModel):
     email: EmailStr
     referrer_username: Optional[str] = None

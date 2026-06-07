@@ -1,17 +1,11 @@
 import { Link, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { api } from "@/lib/api";
 import { useAuth } from "@/App";
 import { isSuperAdmin } from "@/lib/admin";
-import { toast } from "sonner";
 import { Wine, Beer, Martini, GlassWater, MapPin, Sparkles } from "lucide-react";
 
 export default function Landing() {
   const { user, loading } = useAuth();
-  const [email, setEmail] = useState("");
-  const [city, setCity] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [refUser, setRefUser] = useState(null);
 
   useEffect(() => {
@@ -29,25 +23,6 @@ export default function Landing() {
   const handleGoogle = () => {
     const redirectUrl = window.location.origin + "/explore";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-  };
-
-  const scrollToLogin = () => {
-    document.getElementById("entra")?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleWaitlist = async (e) => {
-    e.preventDefault();
-    if (!email || !city) return;
-    setLoading(true);
-    try {
-      await api.post("/waitlist", { email, city });
-      setSubmitted(true);
-      toast.success("Sei nella lista. Ti scriviamo presto. 🍊");
-    } catch {
-      toast.error("Qualcosa è andato storto. Riprova.");
-    } finally {
-      setLoading(false);
-    }
   };
 
   if (!loading && user && isSuperAdmin(user)) {
@@ -104,51 +79,13 @@ export default function Landing() {
           </p>
 
           <div className="mt-12 max-w-xl animate-fade-up" style={{animationDelay: '0.3s'}}>
-            {refUser && !submitted && (
+            {refUser && (
               <div data-testid="ref-banner" className="mb-4 inline-flex items-center gap-2 bg-ape-primary/15 border border-ape-primary/40 rounded-full px-4 py-2 text-sm">
                 <Sparkles className="w-3.5 h-3.5 text-ape-secondary" />
                 <span><span className="font-bold text-ape-secondary">@{refUser}</span> ti ha invitato. Entrate, fate un'ape insieme, e vi appare il badge "Prima volta insieme".</span>
               </div>
             )}
-            {submitted ? (
-              <div className="bg-ape-surface border border-ape-secondary/40 rounded-2xl p-6">
-                <div className="font-display font-bold text-xl mb-1">Ci sei. 🍊</div>
-                <p className="text-ape-textMuted text-sm">Ti scriviamo quando apriamo nella tua città. Nel frattempo, accedi e fai un giro.</p>
-                <button onClick={handleGoogle} data-testid="cta-google-after-waitlist" className="mt-5 bg-ape-primary hover:bg-ape-primaryHover text-ape-text font-bold rounded-full px-6 py-3 transition-all shadow-[0_0_25px_rgba(232,93,4,0.4)]">
-                  Entra con Google
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleWaitlist} className="flex flex-col sm:flex-row gap-3">
-                <input
-                  data-testid="waitlist-email-input"
-                  type="email"
-                  required
-                  placeholder="La tua email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1 bg-ape-surface/80 backdrop-blur-md border border-ape-border focus:border-ape-primary focus:ring-1 focus:ring-ape-primary rounded-full px-6 py-4 outline-none placeholder:text-ape-textMuted text-ape-text"
-                />
-                <input
-                  data-testid="waitlist-city-input"
-                  type="text"
-                  required
-                  placeholder="La tua città"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="sm:w-44 bg-ape-surface/80 backdrop-blur-md border border-ape-border focus:border-ape-primary focus:ring-1 focus:ring-ape-primary rounded-full px-6 py-4 outline-none placeholder:text-ape-textMuted text-ape-text"
-                />
-                <button
-                  data-testid="waitlist-submit-btn"
-                  type="submit"
-                  disabled={loading}
-                  className="bg-ape-primary hover:bg-ape-primaryHover text-ape-text font-bold rounded-full px-7 py-4 transition-all shadow-[0_0_25px_rgba(232,93,4,0.4)] hover:shadow-[0_0_40px_rgba(232,93,4,0.7)] hover:-translate-y-0.5"
-                >
-                  {loading ? "..." : "Voglio entrare"}
-                </button>
-              </form>
-            )}
-            <div id="entra" className="mt-8 bg-ape-surface/80 backdrop-blur-md border border-ape-border rounded-2xl p-6 sm:p-8">
+            <div className="bg-ape-surface/80 backdrop-blur-md border border-ape-border rounded-2xl p-6 sm:p-8">
               <p className="text-xs uppercase tracking-[0.2em] text-ape-secondary font-bold mb-4">Accedi</p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link
@@ -179,8 +116,6 @@ export default function Landing() {
                 Entra con Google
               </button>
             </div>
-
-            <p className="mt-6 text-sm text-ape-textMuted">Non siamo ancora in città? Lascia email e città — ti avvisiamo.</p>
           </div>
         </div>
       </section>
