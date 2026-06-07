@@ -622,20 +622,6 @@ async def my_referral(request: Request, user: dict = Depends(get_current_user)):
     }
 
 
-# ===== Waitlist =====
-@api_router.post("/waitlist")
-async def join_waitlist(entry: WaitlistEntry):
-    doc = {
-        "id": str(uuid.uuid4()),
-        "email": entry.email,
-        "city": entry.city,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db.waitlist.insert_one(doc)
-    doc.pop("_id", None)
-    return {"ok": True, "id": doc["id"]}
-
-
 # ===== Profile =====
 @api_router.put("/users/me")
 async def update_profile(payload: ProfileUpdate, user: dict = Depends(get_current_user)):
